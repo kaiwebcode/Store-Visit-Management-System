@@ -1,0 +1,92 @@
+package com.example.storevisitmanagementsystem.ui.auth
+
+import android.content.Intent
+import android.os.Bundle
+import android.view.View
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.example.storevisitmanagementsystem.data.local.preferences.TokenManagerImpl
+import com.example.storevisitmanagementsystem.data.remote.api.ApiClient
+import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
+import com.example.storevisitmanagementsystem.databinding.ActivityLoginBinding
+import com.example.storevisitmanagementsystem.ui.store.StoreSelectionActivity
+import com.example.storevisitmanagementsystem.util.Resource
+import kotlinx.coroutines.launch
+
+class LoginActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityLoginBinding
+
+    private val viewModel: LoginViewModel by viewModels {
+        val tokenManager = TokenManagerImpl(applicationContext)
+        val apiService = ApiClient.getApiService(applicationContext)
+        val authRepo = AuthRepositoryImpl(apiService, tokenManager)
+        LoginViewModel.Factory(authRepo)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        checkExistingSession()
+        setupListeners()
+        observeViewModel()
+    }
+
+    private fun checkExistingSession() {
+        val tokenManager = TokenManagerImpl(applicationContext)
+        if (tokenManager.isLoggedIn()) {
+            navigateToStoreSelection()
+        }
+    }
+
+    private fun setupListeners() {
+        binding.btnLogin.setOnClickListener {
+            val username = binding.etUsername.text.toString()
+            val password = binding.etPassword.text.toString()
+            viewModel.login(username, password)
+        }
+    }
+
+    private fun observeViewModel() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.loginState.collect { resource ->
+                    when (resource) {
+                        is Resource.Loading -> {
+                            binding.pbLoading.visibility = View.VISIBLE
+                            binding.btnLogin.isEnabled = false
+                            binding.tvError.visibility = View.GONE
+                        }
+                        is Resource.Success -> {
+                            binding.pbLoading.visibility = View.GONE
+                            binding.btnLogin.isEnabled = true
+                            navigateToStoreSelection()
+                        }
+                        is Resource.Error -> {
+                            binding.pbLoading.visibility = View.GONE
+                            binding.btnLogin.isEnabled = true
+                            binding.tvError.text = resource.message
+                            binding.tvError.visibility = View.VISIBLE
+                        }
+                        null -> {
+                            binding.pbLoading.visibility = View.GONE
+                            binding.btnLogin.isEnabled = true
+                            binding.tvError.visibility = View.GONE
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun navigateToStoreSelection() {
+        val intent = Intent(this, StoreSelectionActivity::class.java)
+        startActivity(intent)
+        finish()
+    }
+}
