@@ -2,6 +2,7 @@ package com.example.storevisitmanagementsystem.ui.store
 
 import android.graphics.Color
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -52,13 +53,15 @@ class StoreAdapter(
             }
 
             if (isSelected) {
-                binding.cardStore.setStrokeColor(Color.parseColor("#2E7D32"))
-                binding.cardStore.strokeWidth = 4
-                binding.cardStore.setCardBackgroundColor(Color.parseColor("#F1F8E9"))
-            } else {
-                binding.cardStore.setStrokeColor(Color.parseColor("#E0E0E0"))
+                binding.cardStore.setStrokeColor(Color.parseColor("#1685FF")) // sv_accent
                 binding.cardStore.strokeWidth = 2
-                binding.cardStore.setCardBackgroundColor(Color.parseColor("#FFFFFF"))
+                binding.cardStore.setCardBackgroundColor(Color.parseColor("#0D2344")) // sv_selected
+                binding.tvSelectedIndicator.visibility = View.VISIBLE
+            } else {
+                binding.cardStore.setStrokeColor(Color.parseColor("#344252")) // sv_border
+                binding.cardStore.strokeWidth = 1
+                binding.cardStore.setCardBackgroundColor(Color.parseColor("#19222E")) // sv_surface
+                binding.tvSelectedIndicator.visibility = View.GONE
             }
 
             binding.root.setOnClickListener {

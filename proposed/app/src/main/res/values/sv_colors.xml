@@ -1,0 +1,13 @@
+<resources>
+    <color name="sv_bg">#0B1019</color>
+    <color name="sv_appbar">#101722</color>
+    <color name="sv_surface">#19222E</color>
+    <color name="sv_input_surface">#141C26</color>
+    <color name="sv_accent">#1685FF</color>
+    <color name="sv_selected">#0D2344</color>
+    <color name="sv_text">#F8FAFC</color>
+    <color name="sv_muted">#A8B5C8</color>
+    <color name="sv_border">#344252</color>
+    <color name="sv_error">#F87171</color>
+    <color name="sv_success">#34D399</color>
+</resources>

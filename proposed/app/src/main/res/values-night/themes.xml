@@ -1,0 +1,16 @@
+<resources>
+    <style name="Theme.StoreVisitManagementSystem" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sv_accent</item>
+        <item name="colorPrimaryVariant">@color/sv_appbar</item>
+        <item name="colorOnPrimary">@color/sv_text</item>
+        <item name="colorSecondary">@color/sv_accent</item>
+        <item name="colorOnSecondary">@color/sv_text</item>
+        <item name="colorSurface">@color/sv_surface</item>
+        <item name="colorOnSurface">@color/sv_text</item>
+        <item name="android:colorBackground">@color/sv_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/sv_bg</item>
+        <item name="android:navigationBarColor">@color/sv_bg</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

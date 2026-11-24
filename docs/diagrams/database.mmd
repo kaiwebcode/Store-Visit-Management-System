@@ -1,11 +1,52 @@
 erDiagram
-    USER ||--o{ STORE : assigned_to
-    USER ||--o{ TASK : owns
-    STORE ||--o{ TASK : contains
-    TASK ||--o{ PHOTO_EVIDENCE : attaches
-    TASK ||--o{ SYNC_QUEUE : enqueues
+    %% =========================================================================
+    %% SECTION 1: IMPLEMENTED DAY 15 MOCK DATABASE (mock_server.db - In-Process SQLite)
+    %% =========================================================================
+    MOCK_USERS ||--o{ MOCK_STORE_ASSIGNMENTS : assigns
+    MOCK_STORES ||--o{ MOCK_STORE_ASSIGNMENTS : assigned_in
+    MOCK_USERS ||--o{ MOCK_SESSIONS : authenticates
 
-    USER {
+    MOCK_USERS {
+        string user_id PK
+        string username
+        string password
+        string full_name
+        string role
+    }
+
+    MOCK_STORES {
+        string store_id PK
+        string store_code
+        string name
+        string address
+        string category
+        string last_visited
+    }
+
+    MOCK_STORE_ASSIGNMENTS {
+        string assignment_id PK
+        string store_id FK
+        string user_id FK
+        string assigned_at
+    }
+
+    MOCK_SESSIONS {
+        string token PK
+        string user_id FK
+        string expires_at
+    }
+
+    %% =========================================================================
+    %% SECTION 2: PLANNED ROOM APP LOCAL DATABASE (AppDatabase.db - Days 16-19)
+    %% =========================================================================
+    ROOM_USER ||--o{ ROOM_STORE_ASSIGNMENT : owns_assignment
+    ROOM_STORE ||--o{ ROOM_STORE_ASSIGNMENT : links_store
+    ROOM_USER ||--o{ ROOM_TASK : owns_task
+    ROOM_STORE ||--o{ ROOM_TASK : task_at_store
+    ROOM_TASK ||--o{ ROOM_PHOTO_EVIDENCE : attaches_photos
+    ROOM_TASK ||--o{ ROOM_SYNC_QUEUE : enqueues_operations
+
+    ROOM_USER {
         string user_id PK
         string username
         string full_name
@@ -13,18 +54,24 @@ erDiagram
         string expires_at
     }
 
-    STORE {
+    ROOM_STORE {
         string store_id PK
         string store_code
         string name
         string address
         string category
-        string assigned_user_id FK
         string last_visited_at
         boolean is_active
     }
 
-    TASK {
+    ROOM_STORE_ASSIGNMENT {
+        string assignment_id PK
+        string user_id FK
+        string store_id FK
+        string assigned_at
+    }
+
+    ROOM_TASK {
         string task_id PK
         string store_id FK
         string user_id FK
@@ -41,7 +88,7 @@ erDiagram
         boolean is_deleted
     }
 
-    PHOTO_EVIDENCE {
+    ROOM_PHOTO_EVIDENCE {
         string photo_id PK
         string task_id FK
         string user_id FK
@@ -53,7 +100,7 @@ erDiagram
         string created_at
     }
 
-    SYNC_QUEUE {
+    ROOM_SYNC_QUEUE {
         string operation_id PK
         string entity_type
         string entity_id

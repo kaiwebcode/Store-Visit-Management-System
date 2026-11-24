@@ -1,53 +1,62 @@
-# Architectural Decisions & Design Tradeoffs
+# Architectural Decisions, Session Limitations & Design Tradeoffs
 **Project:** Store Visit Management System  
 **Package:** `com.example.storevisitmanagementsystem`
 
 ---
 
-## 1. Summary of Codex Architectural Findings & Resolutions
+## 1. Documented Current Session Limitations (Day 15 Implementation)
 
-### Finding 1: Session Expiry & Delayed 401 Protection (CRITICAL)
-- **Correction:** Manual logout and 401 session expiry clear ONLY active authentication tokens in `TokenManager`. Room entities and photo files are preserved in account-isolated storage (`context.filesDir/task_photos/{userId}/`).
-- **Delayed 401 Fix:** `AuthInterceptor` verifies that a 401 response's Bearer token matches the currently active token in `TokenManager` before triggering session invalidation, preventing delayed responses from superseded sessions from clearing new logins.
+> **IMPORTANT DISCLOSURE:** The following security & session features are documented designs for future enhancement and are NOT claimed as fully passed in the Day 15 baseline:
 
-### Finding 2: Standalone SQLite-Backed Mock Backend & Operation Replay (CRITICAL)
-- **Correction:** Replaced in-process mock server with a standalone SQLite-backed test backend (`mock_server.db`).
-- **Idempotency Fix:** Domain Record IDs (`taskId`, `photoId`) are separated from Immutable Operation IDs (`operationId`). The mock server maintains a `processed_operations` table (`operation_id`, `user_id`, `payload_hash`, `response_json`). Submitting a duplicate `operationId` returns cached `200 OK`; submitting a duplicate `operationId` with an altered payload returns `400 BAD_REQUEST`.
-
-### Finding 3: Photo Evidence Lifecycle & File Recovery (HIGH)
-- **Correction:** Defined explicit execution ordering: Task Create -> Photo Capture -> Photo Upload (`POST /photos/upload`) -> Task Complete (`PUT /tasks/{id}`) -> Server ACK -> Local `SYNCED`.
-- **Crash Recovery:** Startup script purges temporary `.tmp` files older than 24 hours. Finalized `.jpg` files remain preserved until server ACK.
-- **Compression Alignment:** Client compressor enforces max 1024x1024, JPEG ~80%, target size < 300KB. API validator enforces max 500KB and JPEG mime type.
-
-### Finding 4: WorkManager Recovery & Safe Acknowledgements (HIGH)
-- **Correction:** Specified 4 recovery triggers: App startup (`SyncRecoveryManager`), Re-login, Network reconnect (`ConnectivityManager`), and Manual retry UI button.
-- **Safe ACK:** A task becomes `SYNCED` locally only when both the photo upload operation and task completion operation receive server ACK.
-
-### Finding 5: Account-Scoped Store Assignments (MEDIUM/LOW)
-- **Correction:** Created `StoreAssignmentEntity` with composite key (`userId`, `storeId`). Prevents multi-user store caching corruption. Server validates Bearer token `userId` for store access authorization.
-
-### Finding 6: Stress-Test Acceptance & Baseline Schedule (MEDIUM/LOW)
-- **Correction:** Defined run-scoped stress-test fixture for 100 tasks and 50 photos. Specified post-commit response-drop scenario where server stores record but network drops response, verifying zero duplicate server records on client retry.
-- **Schedule Target:** Preserved 40-hour baseline target. Contingency buffer allocated from setup optimization to absorb Days 18–19 complexity.
+1. **Unencrypted SharedPreferences:**
+   - *Current Implementation:* `TokenManagerImpl` utilizes standard Android `SharedPreferences` (`MODE_PRIVATE`) for storing authentication tokens, active `userId`, and session metadata.
+   - *Future Enhancement:* Migration to `EncryptedSharedPreferences` / `androidx.security.crypto` is planned for future iterations.
+2. **Mock Server Token Timestamp Expiration Enforcement:**
+   - *Current Implementation:* The in-process mock database (`mock_server.db`) records an `expires_at` timestamp during login, but the current Day 15 `MockApiInterceptor` validates token presence and active session mapping without rejecting requests based on elapsed wall-clock timestamp comparison.
+   - *Future Enhancement:* Dynamic wall-clock expiration checking on the mock server is planned for Day 17 sync integration.
 
 ---
 
-## 2. Documented Tradeoffs
+## 2. Architectural Decisions & Rationale
+
+### ADR-01: Session Logout & Expiry Data Safety (CRITICAL)
+- **Context:** Field agents logging out or encountering session expiry while offline must not lose unsynchronized audit tasks or photo evidence.
+- **Decision:** Logout and HTTP 401 session expiry clear ONLY active authentication tokens in `TokenManager`. Room entities and photo files are preserved in account-isolated storage (`context.filesDir/task_photos/{userId}/`).
+- **Rationale:** Prevents catastrophic data loss during offline field operations. Unsynced data is automatically recovered when the user re-authenticates.
+
+### ADR-02: In-Process SQLite-Backed Mock API Architecture
+- **Context:** An in-process mock server backed by SQLite ensures data persistence across app process restarts without requiring external server deployment.
+- **Decision:** Implement `MockApiInterceptor` backed by an Android SQLite database (`mock_server.db` via `SQLiteOpenHelper`).
+- **Rationale:** Operates seamlessly in-process, requiring zero external server setup, port forwarding, or network configuration. (A separate standalone HTTP service process is planned as future work).
+
+### ADR-03: Separation of Record IDs from Sync Operation IDs
+- **Context:** Network retries without operation disambiguation risk creating duplicate database records on the server.
+- **Decision:** Separate domain entity identities (`taskId`, `photoId`) from sync operation identities (`operationId`). Every queue item is assigned a unique, immutable `operationId`.
+- **Rationale:** The backend tracks `operationId` in a `processed_operations` table. Replayed sync requests return `200 OK` with the stored result without creating duplicate records.
+
+### ADR-04: Account-Scoped Store Assignments
+- **Context:** Two agents sharing a physical store must not corrupt each other's cached store assignments in local storage.
+- **Decision:** Model store assignments using a composite key (`userId`, `storeId`) in `StoreAssignmentEntity`.
+- **Rationale:** Guarantees complete data isolation when multiple users share store locations.
+
+---
+
+## 3. Documented Tradeoffs
 
 | Area | Option Chosen | Alternative Considered | Tradeoff Analysis |
 |:---|:---|:---|:---|
 | **Data Safety** | Retain unsynced tasks on logout/401 | Wipe local DB on logout | Wiping local DB is simpler for single-user security, but causes unacceptable data loss for field agents. Account isolation by `userId` provides both security and data safety. |
-| **Mock Engine** | Standalone SQLite Mock API (`mock_server.db`) | Pure In-Memory Interceptor | In-memory interceptors require less setup, but cannot test multi-session persistence, app process restarts, or real database idempotency. |
+| **Mock Engine** | In-Process SQLite Mock API (`mock_server.db`) | Separate External HTTP Server | In-process SQLite mock interceptor requires zero port forwarding or external dependencies; a separate HTTP service process is deferred as future work. |
 | **Store Caching** | Composite `StoreAssignment` (`userId`, `storeId`) | Global `Store` table only | Global store tables corrupt cached assignments when multiple users share a physical store. Composite assignment keys guarantee account isolation. |
 
 ---
 
-## 3. Deferred Risks & Schedule Contingency
+## 4. Deferred Risks & Schedule Contingency
 
 ### Deferred Risk 1: Multi-Device Concurrent Editing Conflicts
 - **Status:** Deferred to backend policy.
 - **Client Policy:** Client uses Last-Write-Wins (LWW) based on client timestamp. Mock server returns `409 CONFLICT` if server record has newer update timestamp, moving queue item to `SYNC_CONFLICT` state for user review.
 
-### Deferred Risk 2: Schedule Density on Days 18 and 19
+### Deferred Risk 2: Schedule Alignment with Week 4 PPT
 - **Status:** Managed via modular DI boundaries.
-- **Contingency Plan:** Using modular interfaces (`ITaskRepository`, `IPhotoRepository`, `ISyncRepository`, `IImageStorageManager`) enables isolated testing and fallback to Camera Intent if CameraX setup exceeds budget.
+- **Schedule:** Tuesday = Tasks/Camera/Room; Wednesday = Sync/Uploads/Recovery; Thursday = Debugging/Monitoring; Friday = Testing/Delivery.

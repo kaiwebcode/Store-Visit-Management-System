@@ -88,6 +88,7 @@ class StoreSelectionActivity : AppCompatActivity() {
                                 binding.tvError.visibility = View.GONE
                                 val list = resource.data ?: emptyList()
                                 storeAdapter.submitList(list)
+                                binding.tvStoreCount.text = "${list.size} stores"
                                 if (list.isEmpty()) {
                                     binding.tvEmpty.visibility = View.VISIBLE
                                 } else {

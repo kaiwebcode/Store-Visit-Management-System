@@ -2,89 +2,48 @@
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/cardStore"
-    android:layout_width="match_parent"
+    android:id="@+id/cardStore" android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="16dp"
-    android:layout_marginVertical="6dp"
-    app:cardCornerRadius="12dp"
-    app:cardElevation="2dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="#E0E0E0">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvStoreName"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Store Name"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="#212121" />
-
-            <TextView
-                android:id="@+id/tvStoreCode"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="#E3F2FD"
-                android:textColor="#1565C0"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="4dp"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:text="STR-001" />
+    android:layout_marginHorizontal="20dp" android:layout_marginVertical="7dp"
+    app:cardCornerRadius="16dp" app:cardElevation="0dp"
+    app:cardBackgroundColor="@color/sv_surface"
+    app:strokeColor="@color/sv_border" app:strokeWidth="1dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:padding="18dp" android:orientation="vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical">
+            <TextView android:id="@+id/tvStoreName" android:layout_width="0dp"
+                android:layout_height="wrap_content" android:layout_weight="1"
+                android:text="Downtown Megastore" android:textSize="18sp"
+                android:textColor="@color/sv_text" android:textStyle="bold"/>
+            <TextView android:id="@+id/tvStoreCode" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:background="@drawable/sv_badge"
+                android:paddingHorizontal="9dp" android:paddingVertical="5dp"
+                android:text="STR-NY-001" android:textSize="11sp"
+                android:textColor="@color/sv_accent" android:textStyle="bold"/>
+            <TextView android:id="@+id/tvSelectedIndicator" android:layout_width="27dp"
+                android:layout_height="27dp" android:layout_marginStart="8dp"
+                android:background="@drawable/sv_circle_blue" android:gravity="center"
+                android:text="✓" android:textStyle="bold" android:textColor="@color/sv_text"
+                android:visibility="gone"/>
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/tvStoreAddress"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="123 Main St, New York, NY"
-            android:textSize="14sp"
-            android:textColor="#616161" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/tvStoreCategory"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="#F5F5F5"
-                android:textColor="#424242"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp"
-                android:textSize="12sp"
-                android:text="SUPERMARKET" />
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/tvLastVisited"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textColor="#757575"
-                android:text="Last visited: 2026-03-25" />
+        <TextView android:id="@+id/tvStoreAddress"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" android:text="123 Main St, New York, NY"
+            android:textSize="14sp" android:textColor="@color/sv_muted"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="14dp" android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView android:id="@+id/tvStoreCategory"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="SUPERMARKET" android:background="@drawable/sv_badge"
+                android:textColor="@color/sv_muted" android:paddingHorizontal="10dp"
+                android:paddingVertical="5dp" android:textSize="11sp"/>
+            <Space android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1"/>
+            <TextView android:id="@+id/tvLastVisited"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Last visited: 2026-03-25" android:textSize="11sp"
+                android:textColor="@color/sv_muted"/>
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

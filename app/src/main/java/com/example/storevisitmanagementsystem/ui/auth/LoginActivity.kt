@@ -5,9 +5,11 @@ import android.os.Bundle
 import android.view.View
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.storevisitmanagementsystem.BuildConfig
 import com.example.storevisitmanagementsystem.data.local.preferences.TokenManagerImpl
 import com.example.storevisitmanagementsystem.data.remote.api.ApiClient
 import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
@@ -31,6 +33,9 @@ class LoginActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Show debug credentials container only in debug builds
+        binding.debugCredentialsContainer.isVisible = BuildConfig.DEBUG
 
         checkExistingSession()
         setupListeners()

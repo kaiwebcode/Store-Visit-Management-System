@@ -1,152 +1,109 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#F5F5F5">
-
-    <!-- Top Header Bar -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#1976D2"
-        android:orientation="horizontal"
-        android:padding="16dp"
-        android:gravity="center_vertical">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tvGreeting"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Welcome, Alex Mercer"
-                android:textColor="#FFFFFF"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Select Assigned Retail Store"
-                android:textColor="#BBDEFB"
-                android:textSize="13sp" />
-        </LinearLayout>
-
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@color/sv_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp"
+        android:orientation="horizontal" android:background="@color/sv_appbar"
+        android:gravity="center_vertical" android:paddingHorizontal="20dp">
+        <ImageView android:layout_width="32dp" android:layout_height="32dp"
+            android:src="@drawable/sv_brand_icon" android:contentDescription="StoreVisit logo"/>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:layout_marginStart="12dp"
+            android:text="StoreVisit" android:textSize="23sp" android:textStyle="bold"
+            android:textColor="@color/sv_text"/>
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnLogout"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Logout"
-            android:textColor="#FFFFFF"
-            app:strokeColor="#FFFFFF" />
+            android:id="@+id/btnLogout" android:layout_width="wrap_content"
+            android:layout_height="48dp" android:text="LOGOUT"
+            android:textColor="@color/sv_accent"
+            app:backgroundTint="@color/sv_appbar"/>
     </LinearLayout>
-
-    <!-- Search Input -->
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        app:cardCornerRadius="10dp"
-        app:cardElevation="2dp">
-
-        <EditText
-            android:id="@+id/etSearch"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@null"
-            android:drawableStart="@android:drawable/ic_menu_search"
-            android:drawablePadding="12dp"
-            android:hint="Search store name, code, or address..."
-            android:paddingHorizontal="16dp"
-            android:textSize="14sp"
-            android:inputType="text" />
-    </com.google.android.material.card.MaterialCardView>
-
-    <!-- Selected Store Info Banner -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/cardSelectedStore"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="12dp"
-        android:visibility="gone"
-        app:cardCornerRadius="10dp"
-        app:cardBackgroundColor="#E8F5E9"
-        app:strokeWidth="1dp"
-        app:strokeColor="#81C784">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ACTIVE STORE CONTEXT"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:textColor="#2E7D32" />
-
-            <TextView
-                android:id="@+id/tvSelectedStoreInfo"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="Downtown Megastore (STR-NY-001)"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:textColor="#1B5E20" />
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:fillViewport="true" android:clipToPadding="false">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:paddingBottom="24dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:padding="20dp" android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:layout_width="50dp" android:layout_height="50dp"
+                    android:gravity="center" android:text="●" android:textSize="34sp"
+                    android:textColor="@color/sv_accent" android:background="@drawable/sv_card_background" />
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp" android:orientation="vertical">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="Welcome," android:textColor="@color/sv_muted" android:textSize="14sp" />
+                    <TextView android:id="@+id/tvGreeting" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="Alex Mercer"
+                        android:textColor="@color/sv_text" android:textSize="22sp" android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" android:paddingHorizontal="20dp"
+                android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Assigned Stores"
+                    android:textColor="@color/sv_text" android:textSize="26sp" android:textStyle="bold" />
+                <TextView android:id="@+id/tvStoreCount" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:background="@drawable/sv_badge"
+                    android:text="0 stores" android:textColor="@color/sv_muted"
+                    android:textSize="12sp" android:paddingHorizontal="12dp" android:paddingVertical="7dp" />
+            </LinearLayout>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginHorizontal="20dp" android:layout_marginTop="20dp"
+                app:cardCornerRadius="14dp" app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/sv_surface"
+                app:strokeColor="@color/sv_border" app:strokeWidth="1dp">
+                <EditText android:id="@+id/etSearch" android:layout_width="match_parent"
+                    android:layout_height="56dp" android:background="@null"
+                    android:paddingHorizontal="16dp" android:singleLine="true"
+                    android:hint="Search store name, code, or address..."
+                    android:textColor="@color/sv_text" android:textColorHint="@color/sv_muted"
+                    android:textSize="14sp" android:inputType="text"/>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardSelectedStore"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginHorizontal="20dp" android:layout_marginTop="16dp"
+                android:visibility="gone" app:cardCornerRadius="15dp" app:cardElevation="0dp"
+                app:strokeColor="@color/sv_accent" app:strokeWidth="1dp"
+                app:cardBackgroundColor="@color/sv_selected">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:gravity="center_vertical" android:padding="18dp">
+                    <TextView android:layout_width="42dp" android:layout_height="42dp"
+                        android:text="✓" android:textSize="25sp" android:textColor="@color/sv_text"
+                        android:gravity="center" android:background="@drawable/sv_circle_blue"/>
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="16dp"
+                        android:orientation="vertical">
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:text="ACTIVE STORE CONTEXT" android:textSize="12sp"
+                            android:textStyle="bold" android:textColor="@color/sv_accent"/>
+                        <TextView android:id="@+id/tvSelectedStoreInfo"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="5dp" android:textSize="15sp"
+                            android:textStyle="bold" android:textColor="@color/sv_text" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp">
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvStores" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:nestedScrollingEnabled="false"
+                    android:clipToPadding="false" android:paddingBottom="20dp"/>
+                <ProgressBar android:id="@+id/pbLoading" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:layout_gravity="center"
+                    android:visibility="gone" />
+                <TextView android:id="@+id/tvEmpty" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:padding="24dp"
+                    android:text="No assigned stores found matching search."
+                    android:gravity="center" android:textColor="@color/sv_muted"
+                    android:visibility="gone"/>
+                <TextView android:id="@+id/tvError" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:padding="24dp"
+                    android:textColor="@color/sv_error" android:gravity="center"
+                    android:visibility="gone"/>
+            </FrameLayout>
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvStores"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingBottom="16dp" />
-
-        <ProgressBar
-            android:id="@+id/pbLoading"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvEmpty"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="No assigned stores found matching search."
-            android:textSize="14sp"
-            android:textColor="#757575"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvError"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:padding="24dp"
-            android:textColor="#D32F2F"
-            android:textSize="14sp"
-            android:gravity="center"
-            android:visibility="gone" />
-    </FrameLayout>
+    </ScrollView>
 </LinearLayout>
