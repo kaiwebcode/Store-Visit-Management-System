@@ -18,6 +18,8 @@ import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityStoreSelectionBinding
 import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
+import com.example.storevisitmanagementsystem.ui.task.TaskListActivity
+import com.example.storevisitmanagementsystem.util.Constants
 import com.example.storevisitmanagementsystem.util.Resource
 import kotlinx.coroutines.launch
 
@@ -49,7 +51,7 @@ class StoreSelectionActivity : AppCompatActivity() {
 
         storeAdapter = StoreAdapter { store ->
             viewModel.selectStore(store)
-            Toast.makeText(this, "Active store selected: ${store.name}", Toast.LENGTH_SHORT).show()
+            navigateToTaskList(store.id, store.name)
         }
 
         binding.rvStores.apply {
@@ -61,6 +63,13 @@ class StoreSelectionActivity : AppCompatActivity() {
     private fun setupListeners() {
         binding.btnLogout.setOnClickListener {
             viewModel.logout()
+        }
+
+        binding.cardSelectedStore.setOnClickListener {
+            val store = viewModel.selectedStore.value
+            if (store != null) {
+                navigateToTaskList(store.id, store.name)
+            }
         }
 
         binding.etSearch.addTextChangedListener(object : TextWatcher {
@@ -131,6 +140,14 @@ class StoreSelectionActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun navigateToTaskList(storeId: String, storeName: String) {
+        val intent = Intent(this, TaskListActivity::class.java).apply {
+            putExtra(Constants.EXTRA_STORE_ID, storeId)
+            putExtra(Constants.EXTRA_STORE_NAME, storeName)
+        }
+        startActivity(intent)
     }
 
     private fun navigateToLogin() {

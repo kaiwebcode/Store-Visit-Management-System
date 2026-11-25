@@ -6,7 +6,12 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.example.storevisitmanagementsystem.data.remote.model.StoreDto
 import com.example.storevisitmanagementsystem.data.remote.model.LoginResponse
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class MockDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
 
@@ -130,7 +135,9 @@ class MockDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, 
                 val name = c.getString(c.getColumnIndexOrThrow("full_name"))
                 val role = c.getString(c.getColumnIndexOrThrow("role"))
                 val token = "mock_token_${userId}_${UUID.randomUUID().toString().take(8)}"
-                val expiresAt = "2026-12-31T23:59:59Z"
+                val expiresAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.format(Date(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(30)))
 
                 saveSession(token, userId, expiresAt)
 
@@ -160,7 +167,10 @@ class MockDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, 
 
     fun validateToken(token: String): String? {
         val db = readableDatabase
-        val cursor = db.rawQuery("SELECT user_id FROM sessions WHERE token = ?", arrayOf(token))
+        val cursor = db.rawQuery(
+            "SELECT user_id FROM sessions WHERE token = ? AND julianday(expires_at) > julianday('now')",
+            arrayOf(token)
+        )
         return cursor.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }

@@ -39,6 +39,16 @@
 - **Decision:** Model store assignments using a composite key (`userId`, `storeId`) in `StoreAssignmentEntity`.
 - **Rationale:** Guarantees complete data isolation when multiple users share store locations.
 
+### ADR-05: Single-Transaction Atomic Task & Sync Queue Persistence (Day 16)
+- **Context:** Task mutations (create, edit, complete, delete) and photo evidence additions must create immutable sync operation records in `sync_queue` without risking inconsistent state if an app crash occurs mid-write.
+- **Decision:** Wrap `TaskEntity` / `PhotoEvidenceEntity` inserts/updates and `SyncQueueEntity` inserts into Room `@Transaction` methods in `TaskDao` and `PhotoEvidenceDao`.
+- **Rationale:** Guarantees that local database mutations and their corresponding sync operations succeed or fail atomically as a single unit.
+
+### ADR-06: Off-Thread Image Compression & Temporary Capture File Reconciliation (Day 16)
+- **Context:** High-resolution camera photos can block the UI thread and consume significant disk storage or memory. Interrupted camera flows can leave orphaned temporary capture files.
+- **Decision:** Use `ActivityResultContracts.TakePicture` with `FileProvider` to capture to temporary `.tmp` files in `context.filesDir/task_photos/{userId}/`. Perform downscaling (max 1024x1024) and JPEG compression (~80%, <300KB) off-thread on `Dispatchers.IO`, atomically renaming to `.jpg`. Automatically reconcile and delete orphaned `.tmp` files on launch.
+- **Rationale:** Preserves smooth 60fps UI performance and prevents orphaned file accumulation while safeguarding valid photo evidence.
+
 ---
 
 ## 3. Documented Tradeoffs
