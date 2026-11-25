@@ -64,6 +64,26 @@ class StoreRepositoryTest {
         assertNull(fakeTokenManager.getAuthToken())
     }
 
+    @Test
+    fun `validateSelectedStore requires both the current selection and the assigned account`() = runBlocking {
+        fakeTokenManager.saveSession("token123", "usr_001", "agent1", "Alex Mercer", "FIELD_AGENT")
+        fakeTokenManager.saveSelectedStoreId("str_101")
+        assertTrue(repository.validateSelectedStore("usr_001", "str_101") is Resource.Success)
+        assertTrue(repository.validateSelectedStore("usr_001", "str_102") is Resource.Error)
+
+        fakeTokenManager.saveSession("token456", "usr_002", "agent2", "Sarah Connor", "FIELD_AGENT")
+        assertTrue(repository.validateSelectedStore("usr_002", "str_101") is Resource.Error)
+    }
+
+    @Test
+    fun `validateSelectedStore rejects an expired session`() = runBlocking {
+        fakeTokenManager.saveSession("expired_token", "usr_001", "agent1", "Alex Mercer", "FIELD_AGENT")
+        fakeTokenManager.saveSelectedStoreId("str_101")
+
+        assertTrue(repository.validateSelectedStore("usr_001", "str_101") is Resource.Error)
+        assertNull(fakeTokenManager.getAuthToken())
+    }
+
     // --- Fake Test Doubles ---
     private class FakeTokenManager : ITokenManager {
         private var token: String? = null

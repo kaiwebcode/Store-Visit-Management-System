@@ -11,6 +11,7 @@ object Constants {
     const val KEY_USER_ROLE = "user_role"
     const val KEY_SELECTED_STORE_ID = "selected_store_id"
 
+    const val EXTRA_TASK_ID = "extra_task_id"
     const val EXTRA_STORE_ID = "extra_store_id"
     const val EXTRA_STORE_NAME = "extra_store_name"
 }
