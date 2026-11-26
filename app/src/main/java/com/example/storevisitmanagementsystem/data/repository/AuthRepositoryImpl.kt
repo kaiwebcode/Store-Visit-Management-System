@@ -44,14 +44,13 @@ class AuthRepositoryImpl(
     override suspend fun logout(): Resource<Unit> {
         val currentToken = tokenManager.getAuthToken()
         if (currentToken != null) {
+            tokenManager.handle401(currentToken)
             try {
                 apiService.logout("Bearer $currentToken")
             } catch (ignored: Exception) {
                 // Ignore network errors during logout
             }
         }
-        // Token cleared in TokenManager. NEVER deletes unsynced tasks or photo evidence files!
-        tokenManager.clearSessionTokenOnly()
         return Resource.Success(Unit)
     }
 

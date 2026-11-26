@@ -1,0 +1,223 @@
+{
+    "tasks":  [
+                  {
+                      "task_id":  "tsk_test_001",
+                      "title":  "Task 1 Offline Audit",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_test_003",
+                      "title":  "Task 3 Price Tag Verification",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_test_002",
+                      "title":  "Task 2 Offline Display Check",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_timeout_004",
+                      "title":  "Timeout Task",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_8bfdd192-2ac",
+                      "title":  "Task 1",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_137df3d1-3a4",
+                      "title":  "Day17 Offline C",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_edb1fb6b-e0c",
+                      "title":  "Day17 Offline A",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_013b5e7f-b4a",
+                      "title":  "Day17 Offline B",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_7e816c40-e8c",
+                      "title":  "Day17 Offline A",
+                      "status":  "COMPLETED",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_a28f6e8a-e15",
+                      "title":  "Task",
+                      "status":  "PENDING",
+                      "is_deleted":  1
+                  }
+              ],
+    "photos":  [
+                   {
+                       "photo_id":  "pho_18bd56b6-7fb",
+                       "task_id":  "tsk_7e816c40-e8c",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_18bd56b6-7fb.jpg"
+                   },
+                   {
+                       "photo_id":  "pho_8d56027d-b4e",
+                       "task_id":  "tsk_7e816c40-e8c",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_8d56027d-b4e.jpg"
+                   },
+                   {
+                       "photo_id":  "pho_bc24dd80-370",
+                       "task_id":  "tsk_013b5e7f-b4a",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_bc24dd80-370.jpg"
+                   },
+                   {
+                       "photo_id":  "pho_6613e9e0-b7a",
+                       "task_id":  "tsk_013b5e7f-b4a",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_6613e9e0-b7a.jpg"
+                   },
+                   {
+                       "photo_id":  "pho_c443224d-aa8",
+                       "task_id":  "tsk_137df3d1-3a4",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_c443224d-aa8.jpg"
+                   },
+                   {
+                       "photo_id":  "pho_baae95da-756",
+                       "task_id":  "tsk_137df3d1-3a4",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_baae95da-756.jpg"
+                   },
+                   {
+                       "photo_id":  "pho_9233473c-02e",
+                       "task_id":  "tsk_a28f6e8a-e15",
+                       "remote_url":  "http://192.168.1.110:3000/v1/uploads/pho_9233473c-02e.jpg"
+                   }
+               ],
+    "processedOperations":  [
+                                {
+                                    "operation_id":  "op_test_001",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829894
+                                },
+                                {
+                                    "operation_id":  "op_test_003",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829903
+                                },
+                                {
+                                    "operation_id":  "op_test_002",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829903
+                                },
+                                {
+                                    "operation_id":  "op_timeout_004",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829925
+                                },
+                                {
+                                    "operation_id":  "op_eac18f3b-f7a",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856044
+                                },
+                                {
+                                    "operation_id":  "op_f9411402-d82",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856058
+                                },
+                                {
+                                    "operation_id":  "op_d639a352-faa",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856063
+                                },
+                                {
+                                    "operation_id":  "op_2e94310e-993",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856063
+                                },
+                                {
+                                    "operation_id":  "op_802aec24-19b",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856063
+                                },
+                                {
+                                    "operation_id":  "op_5cb2a8d4-7d9",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856832
+                                },
+                                {
+                                    "operation_id":  "op_e29670a4-88a",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681856974
+                                },
+                                {
+                                    "operation_id":  "op_4a8074f8-ee1",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857042
+                                },
+                                {
+                                    "operation_id":  "op_d7b79c83-a07",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857048
+                                },
+                                {
+                                    "operation_id":  "op_b9ab6d4e-385",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857172
+                                },
+                                {
+                                    "operation_id":  "op_d1b1209f-4c4",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857400
+                                },
+                                {
+                                    "operation_id":  "op_ee8a12f4-593",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857571
+                                },
+                                {
+                                    "operation_id":  "op_b567e221-c57",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857809
+                                },
+                                {
+                                    "operation_id":  "op_8da148dd-f89",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681857967
+                                },
+                                {
+                                    "operation_id":  "op_888e8a6f-9bf",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681902620
+                                },
+                                {
+                                    "operation_id":  "op_03e593fe-a8f",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681902836
+                                },
+                                {
+                                    "operation_id":  "op_de3a7bea-d26",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681902919
+                                },
+                                {
+                                    "operation_id":  "op_a4a8927b-ad3",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681902924
+                                },
+                                {
+                                    "operation_id":  "op_471caf65-461",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681918008
+                                },
+                                {
+                                    "operation_id":  "op_ffbae4a6-6e8",
+                                    "user_id":  "usr_001_3bac9448",
+                                    "processed_at":  1795681921344
+                                }
+                            ]
+}

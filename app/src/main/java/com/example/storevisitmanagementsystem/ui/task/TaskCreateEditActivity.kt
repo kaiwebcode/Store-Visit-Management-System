@@ -14,6 +14,7 @@ import com.example.storevisitmanagementsystem.data.repository.PhotoRepositoryImp
 import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityTaskCreateEditBinding
+import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
 import com.example.storevisitmanagementsystem.util.Constants
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
 import com.example.storevisitmanagementsystem.util.Resource
@@ -74,7 +75,12 @@ class TaskCreateEditActivity : AppCompatActivity() {
     private fun loadTaskDetails(taskId: String, restoreDraft: Boolean) {
         binding.scrollForm.visibility = View.INVISIBLE
         lifecycleScope.launch {
-            val task = viewModel.observeTask(taskId, storeId).firstOrNull()
+            val taskFlow = viewModel.observeTask(taskId, storeId)
+            if (taskFlow == null) {
+                LoginActivity.requireSignIn(this@TaskCreateEditActivity)
+                return@launch
+            }
+            val task = taskFlow.firstOrNull()
             if (task == null) {
                 Toast.makeText(this@TaskCreateEditActivity, "Task not found", Toast.LENGTH_SHORT).show()
                 finish()
@@ -187,6 +193,9 @@ class TaskCreateEditActivity : AppCompatActivity() {
 
                 when (result) {
                     is Resource.Success -> {
+                        if (userId != null) {
+                            com.example.storevisitmanagementsystem.sync.SyncManager.triggerImmediateSync(applicationContext, userId)
+                        }
                         Toast.makeText(
                             this@TaskCreateEditActivity,
                             if (editingTaskId != null) "Task updated" else "Task created successfully",

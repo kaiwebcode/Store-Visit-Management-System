@@ -10,6 +10,11 @@ import com.example.storevisitmanagementsystem.data.local.db.entity.PhotoEvidence
 import com.example.storevisitmanagementsystem.data.local.db.entity.SyncQueueEntity
 import com.example.storevisitmanagementsystem.data.local.db.entity.TaskEntity
 import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
+import com.example.storevisitmanagementsystem.data.repository.IAuthRepository
+import com.example.storevisitmanagementsystem.data.remote.model.LoginResponse
+import com.example.storevisitmanagementsystem.ui.task.TaskDetailActivity
+import com.example.storevisitmanagementsystem.ui.task.TaskViewModel
+import com.example.storevisitmanagementsystem.util.Constants
 import com.example.storevisitmanagementsystem.data.repository.PhotoRepositoryImpl
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
 import com.example.storevisitmanagementsystem.util.Resource
@@ -228,5 +233,110 @@ class RoomDaoTest {
         assertEquals(1, photos.size)
         assertEquals("pho_001", photos[0].photoId)
         assertEquals("PENDING_UPLOAD", photos[0].uploadStatus)
+    }
+
+    @Test
+    fun offlineTaskOpensFromPersistedListAfterRecreatingDatabaseAndDetailLookup() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dbName = "detail_restart_test_${UUID.randomUUID()}.db"
+        val userId = "usr_001"
+        val storeId = "str_101"
+        try {
+            val original = Room.databaseBuilder(context, AppDatabase::class.java, dbName).build()
+            val taskId = try {
+                val saved = TaskRepositoryImpl(original.taskDao(), original).createTask(
+                    userId, storeId, "Offline detail", "", "GENERAL", "MEDIUM", null
+                ) { true }
+                assertNotNull(saved.data)
+                requireNotNull(saved.data).taskId
+            } finally {
+                original.close()
+            }
+
+            val reopened = Room.databaseBuilder(context, AppDatabase::class.java, dbName).build()
+            try {
+                val tasks = TaskRepositoryImpl(reopened.taskDao(), reopened)
+                val photos = PhotoRepositoryImpl(reopened.photoEvidenceDao(), reopened, ImageStorageManager(context))
+                var activeUser = userId
+                var hasSession = true
+                val auth = object : IAuthRepository {
+                    override suspend fun login(username: String, pass: String): Resource<LoginResponse> =
+                        error("Offline lookup must not sign in")
+                    override suspend fun logout(): Resource<Unit> = error("Not used")
+                    override fun isLoggedIn() = hasSession
+                    override fun getActiveUserId() = activeUser
+                    override fun getActiveUserName() = null
+                }
+                val detail = TaskViewModel(tasks, photos, auth)
+                val item = tasks.getTasksForStore(userId, storeId).first().single()
+                val intent = TaskDetailActivity.createIntent(context, item, "Fixture store")
+                val clickedId = requireNotNull(intent.getStringExtra(Constants.EXTRA_TASK_ID))
+                val clickedStore = requireNotNull(intent.getStringExtra(Constants.EXTRA_STORE_ID))
+                assertEquals(taskId, clickedId)
+                assertEquals(storeId, clickedStore)
+                assertEquals(item, detail.observeTask(clickedId, clickedStore)?.first())
+
+                // A missing session is distinct from an authorized lookup with no matching row.
+                hasSession = false
+                assertNull(detail.observeTask(clickedId, clickedStore))
+                hasSession = true
+                activeUser = "usr_002"
+                assertNotNull(detail.observeTask(clickedId, clickedStore))
+                assertNull(detail.observeTask(clickedId, clickedStore)?.first())
+            } finally {
+                reopened.close()
+            }
+        } finally {
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun testMigration1To2PreservesPendingQueueOrder() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val dbName = "migration_test_${UUID.randomUUID()}.db"
+        val schemaPath = "${AppDatabase::class.java.name}/1.json"
+        val schema = instrumentation.context.assets.open(schemaPath).bufferedReader().use {
+            org.json.JSONObject(it.readText()).getJSONObject("database")
+        }
+
+        try {
+            context.openOrCreateDatabase(dbName, android.content.Context.MODE_PRIVATE, null).use { v1 ->
+                val entities = schema.getJSONArray("entities")
+                for (index in 0 until entities.length()) {
+                    val entity = entities.getJSONObject(index)
+                    val table = entity.getString("tableName")
+                    v1.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}", table))
+                    val indices = entity.getJSONArray("indices")
+                    for (indexId in 0 until indices.length()) {
+                        v1.execSQL(indices.getJSONObject(indexId).getString("createSql").replace("\${TABLE_NAME}", table))
+                    }
+                }
+                val setup = schema.getJSONArray("setupQueries")
+                for (index in 0 until setup.length()) v1.execSQL(setup.getString(index))
+                v1.execSQL("INSERT INTO tasks VALUES ('tsk_001', 'str_101', 'usr_001', 'Offline task', '', 'GENERAL', 'MEDIUM', 'PENDING', NULL, '2026-11-25T10:00:00Z', '2026-11-25T10:00:00Z', 'PENDING_INSERT', NULL, 0)")
+                v1.execSQL("INSERT INTO photo_evidence VALUES ('pho_001', 'tsk_001', 'usr_001', '/private/photo.jpg', NULL, 1024, 'image/jpeg', 'PENDING_UPLOAD', '2026-11-25T10:00:00Z')")
+                v1.execSQL("INSERT INTO sync_queue VALUES ('op_009', 'TASK', 'tsk_001', 'CREATE', 'usr_001', '{}', 0, 'PENDING', NULL, '2026-11-25T10:00:00Z')")
+                v1.execSQL("INSERT INTO sync_queue VALUES ('op_002', 'PHOTO', 'pho_001', 'UPLOAD_PHOTO', 'usr_001', '{}', 0, 'PENDING', NULL, '2026-11-25T10:00:00Z')")
+                v1.version = schema.getInt("version")
+            }
+
+            val migrated = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+                .addMigrations(AppDatabase.MIGRATION_1_2)
+                .build()
+            try {
+                val pending = migrated.syncQueueDao().getPendingOperationsSync("usr_001")
+                assertEquals(2, migrated.openHelper.readableDatabase.version)
+                assertEquals(listOf("op_009", "op_002"), pending.map { it.operationId })
+                assertEquals(listOf(1L, 2L), pending.map { it.sequenceNumber })
+                assertEquals("Offline task", migrated.taskDao().getTaskByIdSync("tsk_001", "usr_001", "str_101")?.title)
+                assertEquals("/private/photo.jpg", migrated.photoEvidenceDao().getPhotoById("pho_001", "usr_001")?.localFilePath)
+            } finally {
+                migrated.close()
+            }
+        } finally {
+            context.deleteDatabase(dbName)
+        }
     }
 }

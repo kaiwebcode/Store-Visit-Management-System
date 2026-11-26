@@ -76,20 +76,21 @@ class TaskRepositoryImpl(
             isDeleted = false
         )
 
-        val syncOp = SyncQueueEntity(
-            operationId = "op_${UUID.randomUUID().toString().take(12)}",
-            entityType = "TASK",
-            entityId = taskId,
-            operationType = "CREATE",
-            userId = userId,
-            payloadJson = gson.toJson(taskEntity),
-            status = "PENDING",
-            createdAt = timestamp
-        )
-
         return try {
             runInTransaction {
                 check(isSessionCurrent()) { "The session or selected store has changed." }
+                val nextSeq = (appDatabase?.syncQueueDao()?.getMaxSequenceNumber() ?: 0L) + 1L
+                val syncOp = SyncQueueEntity(
+                    operationId = "op_${UUID.randomUUID().toString().take(12)}",
+                    entityType = "TASK",
+                    entityId = taskId,
+                    operationType = "CREATE",
+                    userId = userId,
+                    payloadJson = gson.toJson(taskEntity),
+                    status = "PENDING",
+                    createdAt = timestamp,
+                    sequenceNumber = nextSeq
+                )
                 taskDao.insertTask(taskEntity)
                 taskDao.insertSyncQueue(syncOp)
             }
@@ -171,6 +172,7 @@ class TaskRepositoryImpl(
                 val updatedTask = transform(task, timestamp)
                 if (updatedTask != task) {
                     taskDao.updateTask(updatedTask)
+                    val nextSeq = (appDatabase?.syncQueueDao()?.getMaxSequenceNumber() ?: 0L) + 1L
                     taskDao.insertSyncQueue(
                         SyncQueueEntity(
                             operationId = "op_${UUID.randomUUID().toString().take(12)}",
@@ -180,7 +182,8 @@ class TaskRepositoryImpl(
                             userId = userId,
                             payloadJson = gson.toJson(updatedTask),
                             status = "PENDING",
-                            createdAt = timestamp
+                            createdAt = timestamp,
+                            sequenceNumber = nextSeq
                         )
                     )
                 }

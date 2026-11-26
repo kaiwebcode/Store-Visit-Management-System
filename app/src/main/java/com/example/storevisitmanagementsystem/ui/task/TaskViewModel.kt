@@ -65,7 +65,7 @@ class TaskViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun observeTasksForStore(storeId: String) {
-        val userId = authRepository.getActiveUserId() ?: return
+        val userId = getActiveUserId() ?: return
         viewModelScope.launch {
             // Reconcile orphaned temp photo files on task list initialization
             photoRepository.reconcileOrphanedPhotos(userId)
@@ -84,8 +84,8 @@ class TaskViewModel(
         _priorityFilter.value = priority
     }
 
-    fun observeTask(taskId: String, storeId: String): Flow<TaskEntity?> {
-        val userId = getActiveUserId() ?: return flowOf(null)
+    fun observeTask(taskId: String, storeId: String): Flow<TaskEntity?>? {
+        val userId = getActiveUserId() ?: return null
         return taskRepository.getTaskById(taskId, userId, storeId)
     }
 
@@ -101,7 +101,7 @@ class TaskViewModel(
     }
 
     fun loadPhotoCount(taskId: String, onCountLoaded: (Int) -> Unit) {
-        val userId = authRepository.getActiveUserId() ?: return
+        val userId = getActiveUserId() ?: return
         viewModelScope.launch {
             photoRepository.getPhotosForTask(taskId, userId).firstOrNull()?.let { photos ->
                 onCountLoaded(photos.size)

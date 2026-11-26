@@ -1,6 +1,7 @@
 package com.example.storevisitmanagementsystem.data.remote.api
 
 import android.content.Context
+import com.example.storevisitmanagementsystem.BuildConfig
 import com.example.storevisitmanagementsystem.data.remote.api.mock.MockApiInterceptor
 import com.example.storevisitmanagementsystem.util.Constants
 import okhttp3.OkHttpClient
@@ -22,7 +23,7 @@ object ApiClient {
 
     private fun createApiService(context: Context): ApiService {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
         }
 
         val okHttpClient = OkHttpClient.Builder()

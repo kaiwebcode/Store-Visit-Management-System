@@ -6,6 +6,10 @@ import com.example.storevisitmanagementsystem.util.Constants
 
 class TokenManagerImpl(context: Context) : ITokenManager {
 
+    private companion object {
+        val sessionLock = Any()
+    }
+
     private val prefs: SharedPreferences = context.getSharedPreferences(
         Constants.PREF_NAME,
         Context.MODE_PRIVATE
@@ -17,7 +21,7 @@ class TokenManagerImpl(context: Context) : ITokenManager {
         username: String,
         name: String,
         role: String
-    ) {
+    ) = synchronized(sessionLock) {
         prefs.edit()
             .putString(Constants.KEY_AUTH_TOKEN, token)
             .putString(Constants.KEY_USER_ID, userId)
@@ -33,6 +37,10 @@ class TokenManagerImpl(context: Context) : ITokenManager {
 
     override fun getUserId(): String? {
         return prefs.getString(Constants.KEY_USER_ID, null)
+    }
+
+    override fun getAuthTokenForUser(userId: String): String? = synchronized(sessionLock) {
+        getAuthToken()?.takeIf { getUserId() == userId }
     }
 
     override fun getUsername(): String? {
@@ -67,7 +75,7 @@ class TokenManagerImpl(context: Context) : ITokenManager {
      * Clears active authentication tokens on logout or session expiry.
      * CRITICAL REQUIREMENT: This NEVER deletes unsynchronized tasks or photo evidence files!
      */
-    override fun clearSessionTokenOnly() {
+    override fun clearSessionTokenOnly() = synchronized(sessionLock) {
         prefs.edit()
             .remove(Constants.KEY_AUTH_TOKEN)
             .remove(Constants.KEY_SELECTED_STORE_ID)
@@ -78,12 +86,9 @@ class TokenManagerImpl(context: Context) : ITokenManager {
      * Prevents a delayed 401 response from an old session from clearing a newer session.
      * Only invalidates session if requestToken matches activeToken.
      */
-    override fun handle401(requestToken: String?): Boolean {
-        val currentToken = getAuthToken()
-        if (requestToken != null && requestToken == currentToken) {
-            clearSessionTokenOnly()
-            return true
-        }
-        return false
+    override fun handle401(requestToken: String?): Boolean = synchronized(sessionLock) {
+        if (requestToken == null || requestToken != getAuthToken()) return@synchronized false
+        clearSessionTokenOnly()
+        true
     }
 }

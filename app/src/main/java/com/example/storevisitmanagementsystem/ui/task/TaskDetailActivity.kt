@@ -1,5 +1,6 @@
 package com.example.storevisitmanagementsystem.ui.task
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -24,6 +25,7 @@ import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityTaskDetailBinding
 import com.example.storevisitmanagementsystem.util.Constants
+import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
 import com.example.storevisitmanagementsystem.util.Resource
 import kotlinx.coroutines.launch
@@ -168,9 +170,15 @@ class TaskDetailActivity : AppCompatActivity() {
             isMutatingTask = false
             updateTaskActions()
             when (result) {
-                is Resource.Success -> if (closeOnSuccess) {
-                    Toast.makeText(this@TaskDetailActivity, "Task deleted", Toast.LENGTH_SHORT).show()
-                    finish()
+                is Resource.Success -> {
+                    val userId = viewModel.getActiveUserId()
+                    if (userId != null) {
+                        com.example.storevisitmanagementsystem.sync.SyncManager.triggerImmediateSync(applicationContext, userId)
+                    }
+                    if (closeOnSuccess) {
+                        Toast.makeText(this@TaskDetailActivity, "Task deleted", Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
                 }
                 is Resource.Error -> {
                     Toast.makeText(this@TaskDetailActivity, result.message, Toast.LENGTH_LONG).show()
@@ -209,11 +217,17 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     private fun observeData() {
-        val userId = viewModel.getActiveUserId()
         val appDb = AppDatabase.getInstance(applicationContext)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val userId = viewModel.getActiveUserId()
+                val taskFlow = viewModel.observeTask(taskId, storeId)
+                if (userId == null || taskFlow == null) {
+                    LoginActivity.requireSignIn(this@TaskDetailActivity)
+                    return@repeatOnLifecycle
+                }
+
                 launch {
                     viewModel.photoSaveState.collect { result ->
                         binding.pbPhotoProcessing.visibility =
@@ -222,6 +236,10 @@ class TaskDetailActivity : AppCompatActivity() {
                         when (result) {
                             is Resource.Success -> {
                                 Toast.makeText(this@TaskDetailActivity, "Photo evidence attached", Toast.LENGTH_SHORT).show()
+                                val activeUser = viewModel.getActiveUserId()
+                                if (activeUser != null) {
+                                    com.example.storevisitmanagementsystem.sync.SyncManager.triggerImmediateSync(applicationContext, activeUser)
+                                }
                                 viewModel.clearPhotoSaveResult()
                             }
                             is Resource.Error -> {
@@ -235,7 +253,7 @@ class TaskDetailActivity : AppCompatActivity() {
 
                 // Observe Task Entity
                 launch {
-                    viewModel.observeTask(taskId, storeId).collect { task ->
+                    taskFlow.collect { task ->
                         currentTask = task
                         updateTaskActions()
                         if (task != null) {
@@ -248,7 +266,6 @@ class TaskDetailActivity : AppCompatActivity() {
                 }
 
                 // Observe Photo Evidence Entities
-                if (userId == null) return@repeatOnLifecycle
                 launch {
                     appDb.photoEvidenceDao().getPhotosForTask(taskId, userId).collect { photos ->
                         photoAdapter.submitList(photos)
@@ -301,8 +318,15 @@ class TaskDetailActivity : AppCompatActivity() {
             .show()
     }
 
-    private companion object {
-        const val STATE_CAPTURE_PATH = "capture_path"
-        const val STATE_CAPTURE_USER = "capture_user"
+    companion object {
+        fun createIntent(context: Context, task: TaskEntity, storeName: String) =
+            Intent(context, TaskDetailActivity::class.java).apply {
+                putExtra(Constants.EXTRA_TASK_ID, task.taskId)
+                putExtra(Constants.EXTRA_STORE_ID, task.storeId)
+                putExtra(Constants.EXTRA_STORE_NAME, storeName)
+            }
+
+        private const val STATE_CAPTURE_PATH = "capture_path"
+        private const val STATE_CAPTURE_USER = "capture_user"
     }
 }

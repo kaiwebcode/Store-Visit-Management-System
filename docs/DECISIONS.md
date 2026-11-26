@@ -4,69 +4,29 @@
 
 ---
 
-## 1. Documented Current Session Limitations (Day 15 Implementation)
+## 1. Core Architectural Decisions
 
-> **IMPORTANT DISCLOSURE:** The following security & session features are documented designs for future enhancement and are NOT claimed as fully passed in the Day 15 baseline:
-
-1. **Unencrypted SharedPreferences:**
-   - *Current Implementation:* `TokenManagerImpl` utilizes standard Android `SharedPreferences` (`MODE_PRIVATE`) for storing authentication tokens, active `userId`, and session metadata.
-   - *Future Enhancement:* Migration to `EncryptedSharedPreferences` / `androidx.security.crypto` is planned for future iterations.
-2. **Mock Server Token Timestamp Expiration Enforcement:**
-   - *Current Implementation:* The in-process mock database (`mock_server.db`) records an `expires_at` timestamp during login, but the current Day 15 `MockApiInterceptor` validates token presence and active session mapping without rejecting requests based on elapsed wall-clock timestamp comparison.
-   - *Future Enhancement:* Dynamic wall-clock expiration checking on the mock server is planned for Day 17 sync integration.
-
----
-
-## 2. Architectural Decisions & Rationale
-
-### ADR-01: Session Logout & Expiry Data Safety (CRITICAL)
+### ADR-01: Session Logout & Expiry Data Safety
 - **Context:** Field agents logging out or encountering session expiry while offline must not lose unsynchronized audit tasks or photo evidence.
 - **Decision:** Logout and HTTP 401 session expiry clear ONLY active authentication tokens in `TokenManager`. Room entities and photo files are preserved in account-isolated storage (`context.filesDir/task_photos/{userId}/`).
 - **Rationale:** Prevents catastrophic data loss during offline field operations. Unsynced data is automatically recovered when the user re-authenticates.
 
-### ADR-02: In-Process SQLite-Backed Mock API Architecture
-- **Context:** An in-process mock server backed by SQLite ensures data persistence across app process restarts without requiring external server deployment.
-- **Decision:** Implement `MockApiInterceptor` backed by an Android SQLite database (`mock_server.db` via `SQLiteOpenHelper`).
-- **Rationale:** Operates seamlessly in-process, requiring zero external server setup, port forwarding, or network configuration. (A separate standalone HTTP service process is planned as future work).
+### ADR-02: Standalone Node.js + Express + SQLite Test Backend (`server/`)
+- **Context:** Synchronization requirements demand a durable test backend running as a separate process with persistent storage across restarts.
+- **Decision:** Implement a Node.js Express server with SQLite storage (`server/data/backend.db`) and photo storage (`server/uploads/`).
+- **Rationale:** Exposes real HTTP endpoints (`POST /v1/tasks/sync`, `POST /v1/photos/upload`), persists data across restarts, and supports controllable failure headers (`X-Mock-Fail-500`, `X-Mock-Timeout-After-Save`).
 
-### ADR-03: Separation of Record IDs from Sync Operation IDs
+### ADR-03: Separation of Record IDs from Sync Operation IDs & Idempotency
 - **Context:** Network retries without operation disambiguation risk creating duplicate database records on the server.
-- **Decision:** Separate domain entity identities (`taskId`, `photoId`) from sync operation identities (`operationId`). Every queue item is assigned a unique, immutable `operationId`.
-- **Rationale:** The backend tracks `operationId` in a `processed_operations` table. Replayed sync requests return `200 OK` with the stored result without creating duplicate records.
+- **Decision:** Separate domain entity identities (`taskId`, `photoId`) from sync operation identities (`operationId`). Every queue item carries a unique `operationId`. The server records all executed operations in `processed_operations`.
+- **Rationale:** When a timeout-after-server-save occurs and the client retries, the server recognizes the existing `operationId` in `processed_operations` and returns the cached response, producing exactly ONE logical record on the backend.
 
-### ADR-04: Account-Scoped Store Assignments
-- **Context:** Two agents sharing a physical store must not corrupt each other's cached store assignments in local storage.
-- **Decision:** Model store assignments using a composite key (`userId`, `storeId`) in `StoreAssignmentEntity`.
-- **Rationale:** Guarantees complete data isolation when multiple users share store locations.
+### ADR-04: Non-Destructive Room Migration (v1 -> v2) & Monotonic Queue Ordering
+- **Context:** Operations must be executed in exact monotonic dependency order (Task Creation before Photo Upload). Existing v1 pending operations must retain deterministic order.
+- **Decision:** Add `sequence_number` (INTEGER NOT NULL DEFAULT 0) to `SyncQueueEntity` and bump `AppDatabase` to version 2 with `MIGRATION_1_2` (`UPDATE sync_queue SET sequence_number = rowid WHERE sequence_number = 0`).
+- **Rationale:** `MIGRATION_1_2` uses SQLite `rowid` to populate sequence numbers for pre-existing operations, guaranteeing deterministic replay order without data loss.
 
-### ADR-05: Single-Transaction Atomic Task & Sync Queue Persistence (Day 16)
-- **Context:** Task mutations (create, edit, complete, delete) and photo evidence additions must create immutable sync operation records in `sync_queue` without risking inconsistent state if an app crash occurs mid-write.
-- **Decision:** Wrap `TaskEntity` / `PhotoEvidenceEntity` inserts/updates and `SyncQueueEntity` inserts into Room `@Transaction` methods in `TaskDao` and `PhotoEvidenceDao`.
-- **Rationale:** Guarantees that local database mutations and their corresponding sync operations succeed or fail atomically as a single unit.
-
-### ADR-06: Off-Thread Image Compression & Temporary Capture File Reconciliation (Day 16)
-- **Context:** High-resolution camera photos can block the UI thread and consume significant disk storage or memory. Interrupted camera flows can leave orphaned temporary capture files.
-- **Decision:** Use `ActivityResultContracts.TakePicture` with `FileProvider` to capture to temporary `.tmp` files in `context.filesDir/task_photos/{userId}/`. Perform downscaling (max 1024x1024) and JPEG compression (~80%, <300KB) off-thread on `Dispatchers.IO`, atomically renaming to `.jpg`. Automatically reconcile and delete orphaned `.tmp` files on launch.
-- **Rationale:** Preserves smooth 60fps UI performance and prevents orphaned file accumulation while safeguarding valid photo evidence.
-
----
-
-## 3. Documented Tradeoffs
-
-| Area | Option Chosen | Alternative Considered | Tradeoff Analysis |
-|:---|:---|:---|:---|
-| **Data Safety** | Retain unsynced tasks on logout/401 | Wipe local DB on logout | Wiping local DB is simpler for single-user security, but causes unacceptable data loss for field agents. Account isolation by `userId` provides both security and data safety. |
-| **Mock Engine** | In-Process SQLite Mock API (`mock_server.db`) | Separate External HTTP Server | In-process SQLite mock interceptor requires zero port forwarding or external dependencies; a separate HTTP service process is deferred as future work. |
-| **Store Caching** | Composite `StoreAssignment` (`userId`, `storeId`) | Global `Store` table only | Global store tables corrupt cached assignments when multiple users share a physical store. Composite assignment keys guarantee account isolation. |
-
----
-
-## 4. Deferred Risks & Schedule Contingency
-
-### Deferred Risk 1: Multi-Device Concurrent Editing Conflicts
-- **Status:** Deferred to backend policy.
-- **Client Policy:** Client uses Last-Write-Wins (LWW) based on client timestamp. Mock server returns `409 CONFLICT` if server record has newer update timestamp, moving queue item to `SYNC_CONFLICT` state for user review.
-
-### Deferred Risk 2: Schedule Alignment with Week 4 PPT
-- **Status:** Managed via modular DI boundaries.
-- **Schedule:** Tuesday = Tasks/Camera/Room; Wednesday = Sync/Uploads/Recovery; Thursday = Debugging/Monitoring; Friday = Testing/Delivery.
+### ADR-05: WorkManager Unique Scheduling & Safe Operation Claiming
+- **Context:** Background sync must run reliably when network connectivity is restored without launching duplicate concurrent sync jobs.
+- **Decision:** Schedule sync with `WorkManager.enqueueUniqueWork("StoreVisitSyncWork_${userId}", KEEP, ...)` with `NetworkType.CONNECTED` constraints and exponential backoff.
+- **Rationale:** Ensures single-instance execution per account, automatically retrying transient errors while avoiding race conditions.
