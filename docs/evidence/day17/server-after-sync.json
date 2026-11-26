@@ -1,0 +1,53 @@
+{
+    "tasks":  [
+                  {
+                      "task_id":  "tsk_test_001",
+                      "title":  "Task 1 Offline Audit",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_test_003",
+                      "title":  "Task 3 Price Tag Verification",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_test_002",
+                      "title":  "Task 2 Offline Display Check",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  },
+                  {
+                      "task_id":  "tsk_timeout_004",
+                      "title":  "Timeout Task",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  }
+              ],
+    "photos":  [
+
+               ],
+    "processedOperations":  [
+                                {
+                                    "operation_id":  "op_test_001",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829894
+                                },
+                                {
+                                    "operation_id":  "op_test_003",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829903
+                                },
+                                {
+                                    "operation_id":  "op_test_002",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829903
+                                },
+                                {
+                                    "operation_id":  "op_timeout_004",
+                                    "user_id":  "usr_001_bd178372",
+                                    "processed_at":  1795676829925
+                                }
+                            ]
+}

@@ -1,6 +1,7 @@
 package com.example.storevisitmanagementsystem.util
 
 object Constants {
+    const val LOCAL_MOCK_TOKEN_PREFIX = "mock_token_"
     const val MOCK_BASE_URL = "https://api.storevisit.mock/v1/"
 
     const val PREF_NAME = "store_visit_prefs"

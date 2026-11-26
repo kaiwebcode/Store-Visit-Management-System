@@ -49,6 +49,11 @@ Thumbs.db
 google-services.json
 secrets.xml
 
+# Node.js Server Data, Uploads & Node Modules
+server/node_modules/
+server/data/
+server/uploads/
+
 # Mock Server Runtime Databases & Cache (ignore runtime DB, WAL, SHM files)
 *.db
 *.db-journal

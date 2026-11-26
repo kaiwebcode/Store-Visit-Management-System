@@ -109,6 +109,11 @@ class PhotoRepositoryTest {
             return photos.map { it.localFilePath }
         }
 
+        override fun updatePhotoUploadStatus(photoId: String, uploadStatus: String, remoteUrl: String?) {
+            val idx = photos.indexOfFirst { it.photoId == photoId }
+            if (idx != -1) photos[idx] = photos[idx].copy(uploadStatus = uploadStatus, remoteUrl = remoteUrl)
+        }
+
         override fun insertPhoto(photo: PhotoEvidenceEntity) {
             photos.add(photo)
         }

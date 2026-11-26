@@ -1,6 +1,9 @@
 package com.example.storevisitmanagementsystem.data.remote.api.mock
 
 import android.content.Context
+import com.example.storevisitmanagementsystem.BuildConfig
+import com.example.storevisitmanagementsystem.data.remote.model.LoginResponse
+import com.google.gson.reflect.TypeToken
 import com.example.storevisitmanagementsystem.data.remote.model.ApiResponse
 import com.example.storevisitmanagementsystem.data.remote.model.ApiError
 import com.example.storevisitmanagementsystem.data.remote.model.LoginRequest
@@ -15,6 +18,21 @@ class MockApiInterceptor(context: Context) : Interceptor {
     private val dbHelper = MockDatabaseHelper(context)
     private val gson = Gson()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+    private fun isEmulator(): Boolean {
+        return android.os.Build.FINGERPRINT.startsWith("generic") ||
+               android.os.Build.FINGERPRINT.startsWith("unknown") ||
+               android.os.Build.MODEL.contains("google_sdk") ||
+               android.os.Build.MODEL.contains("Emulator") ||
+               android.os.Build.MODEL.contains("Android SDK built for x86") ||
+               android.os.Build.HARDWARE.contains("goldfish") ||
+               android.os.Build.HARDWARE.contains("ranchu") ||
+               android.os.Build.PRODUCT.contains("sdk")
+    }
+
+    private fun getBackendHost(): String {
+        return if (isEmulator()) "10.0.2.2" else BuildConfig.DAY17_BACKEND_HOST
+    }
 
     @Throws(IOException::class)
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -38,6 +56,41 @@ class MockApiInterceptor(context: Context) : Interceptor {
                 ))
             }
 
+            // Keep store assignment available from the local fixtures after an online sign-in.
+            if (BuildConfig.DEBUG && request.url.host == "api.storevisit.mock") {
+                val backendUrl = request.url.newBuilder().scheme("http").host(getBackendHost()).port(3000).build()
+                val backendRequest = request.newBuilder().url(backendUrl).build()
+                when {
+                    path.endsWith("/auth/login") -> {
+                        val response = try {
+                            chain.proceed(backendRequest)
+                        } catch (_: IOException) {
+                            // The standalone Day 15 mock still supports local sign-in.
+                            return handleLogin(request, responseBuilder)
+                        }
+                        try {
+                            if (response.isSuccessful) {
+                                val loginType = object : TypeToken<ApiResponse<LoginResponse>>() {}.type
+                                val login = gson.fromJson<ApiResponse<LoginResponse>>(
+                                    response.peekBody(65_536).string(), loginType
+                                )?.data
+                                login?.let { dbHelper.saveSession(it.token, it.userId, it.expiresAt) }
+                            }
+                            return response
+                        } catch (e: Exception) {
+                            response.close()
+                            throw IOException("Could not cache the backend session", e)
+                        }
+                    }
+                    path.endsWith("/auth/logout") -> {
+                        extractBearerToken(request)?.let(dbHelper::revokeToken)
+                        return chain.proceed(backendRequest)
+                    }
+                    path.endsWith("/tasks/sync") || path.endsWith("/photos/upload") ->
+                        return chain.proceed(backendRequest)
+                }
+            }
+
             return when {
                 path.endsWith("/auth/login") && request.method == "POST" -> {
                     handleLogin(request, responseBuilder)
@@ -49,7 +102,6 @@ class MockApiInterceptor(context: Context) : Interceptor {
                     handleGetAssignedStores(request, responseBuilder)
                 }
                 else -> {
-                    // Default fallback response
                     chain.proceed(request)
                 }
             }

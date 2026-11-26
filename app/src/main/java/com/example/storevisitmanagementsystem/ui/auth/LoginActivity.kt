@@ -1,6 +1,8 @@
 package com.example.storevisitmanagementsystem.ui.auth
 
+import android.app.Activity
 import android.content.Intent
+import android.widget.Toast
 import android.os.Bundle
 import android.view.View
 import androidx.activity.viewModels
@@ -16,9 +18,20 @@ import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityLoginBinding
 import com.example.storevisitmanagementsystem.ui.store.StoreSelectionActivity
 import com.example.storevisitmanagementsystem.util.Resource
+import com.example.storevisitmanagementsystem.util.Constants
+import com.example.storevisitmanagementsystem.sync.SyncManager
 import kotlinx.coroutines.launch
 
 class LoginActivity : AppCompatActivity() {
+
+    companion object {
+        fun requireSignIn(activity: Activity) {
+            Toast.makeText(activity, "Session expired. Sign in again.", Toast.LENGTH_SHORT).show()
+            activity.startActivity(Intent(activity, LoginActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            })
+        }
+    }
 
     private lateinit var binding: ActivityLoginBinding
 
@@ -45,6 +58,7 @@ class LoginActivity : AppCompatActivity() {
     private fun checkExistingSession() {
         val tokenManager = TokenManagerImpl(applicationContext)
         if (tokenManager.isLoggedIn()) {
+            tokenManager.getUserId()?.let { SyncManager.scheduleSync(applicationContext, it) }
             navigateToStoreSelection()
         }
     }
@@ -70,6 +84,15 @@ class LoginActivity : AppCompatActivity() {
                         is Resource.Success -> {
                             binding.pbLoading.visibility = View.GONE
                             binding.btnLogin.isEnabled = true
+                            resource.data?.let { session ->
+                                if (BuildConfig.DEBUG && session.token.startsWith(Constants.LOCAL_MOCK_TOKEN_PREFIX)) {
+                                    Toast.makeText(this@LoginActivity,
+                                        "Local sign-in. Sign in again with the sync server running to upload.",
+                                        Toast.LENGTH_LONG).show()
+                                } else {
+                                    SyncManager.triggerImmediateSync(applicationContext, session.userId)
+                                }
+                            }
                             navigateToStoreSelection()
                         }
                         is Resource.Error -> {

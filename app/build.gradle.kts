@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+val day17BackendHost = providers.gradleProperty("day17BackendHost").orElse("192.168.1.110")
+require(day17BackendHost.get().matches(Regex("[A-Za-z0-9.-]+"))) { "Invalid Day 17 backend host" }
+
 android {
     namespace = "com.example.storevisitmanagementsystem"
     compileSdk = 37
@@ -27,8 +30,14 @@ android {
         buildConfig = true
     }
 
+    sourceSets.getByName("androidTest").assets.directories.add("schemas")
+
     buildTypes {
+        debug {
+            buildConfigField("String", "DAY17_BACKEND_HOST", "\"${day17BackendHost.get()}\"")
+        }
         release {
+            buildConfigField("String", "DAY17_BACKEND_HOST", "\"\"")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
@@ -53,6 +62,7 @@ dependencies {
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.metadata.jvm)
     annotationProcessor(libs.androidx.room.compiler)
 

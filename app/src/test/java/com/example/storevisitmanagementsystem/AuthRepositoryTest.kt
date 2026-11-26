@@ -125,5 +125,13 @@ class AuthRepositoryTest {
         override suspend fun getAssignedStores(token: String, query: String?): Response<ApiResponse<List<com.example.storevisitmanagementsystem.data.remote.model.StoreDto>>> {
             return Response.success(ApiResponse(success = true, data = emptyList()))
         }
+
+        override suspend fun syncTasks(token: String, request: com.example.storevisitmanagementsystem.data.remote.model.SyncBatchRequest): Response<ApiResponse<com.example.storevisitmanagementsystem.data.remote.model.SyncBatchResponse>> {
+            return Response.success(ApiResponse(success = true, data = null))
+        }
+
+        override suspend fun uploadPhoto(token: String, operationId: okhttp3.RequestBody, photoId: okhttp3.RequestBody, taskId: okhttp3.RequestBody, file: okhttp3.MultipartBody.Part): Response<ApiResponse<com.example.storevisitmanagementsystem.data.remote.model.PhotoUploadResponse>> {
+            return Response.success(ApiResponse(success = true, data = null))
+        }
     }
 }

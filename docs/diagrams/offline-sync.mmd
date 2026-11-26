@@ -1,54 +1,45 @@
-sequenceDiagram
-    autonumber
-    actor Agent as Field Agent
-    participant UI as Task UI / ViewModel
-    participant Repo as Task & Photo Repositories
-    participant File as Disk Storage (filesDir/task_photos/{userId})
-    participant DB as Room DB (Tasks, Photos, SyncQueue)
-    participant WM as WorkManager (SyncWorker)
-    participant API as Standalone SQLite Mock API (mock_server.db)
+stateDiagram-v2
+    state "Task and photo saves" as Local
+    state "Pending in Room" as Pending
+    state "Legacy SYNCING or FAILED row" as Legacy
+    state "Request in flight (queue stays pending)" as InFlight
+    state "WorkManager retry with backoff" as Backoff
+    state "Waiting for sign-in" as SessionPaused
+    state "Validation failure (queue retained)" as ValidationBlocked
+    state "Acknowledged in Room" as Acknowledged
 
-    Agent->>UI: Create/Edit Task & Capture Photo
-    UI->>Repo: saveTaskWithPhoto(task, tempPhoto)
-    Repo->>File: Write bytes to temp -> flush -> atomic rename to photo_{photoId}.jpg
-    File-->>Repo: Local File Path Confirmed
+    [*] --> Local
+    Local --> Pending: Save task and operation in one Room transaction
+    Local --> Pending: Save JPEG locally, then save photo and operation in Room
+    Legacy --> Pending: Restore this account's queue on worker start
 
-    Repo->>DB: Atomic @Transaction (insert TaskEntity + PhotoEvidenceEntity + SyncQueueEntity)
-    Note over DB: Task sync_status = PENDING<br/>SyncQueue status = PENDING<br/>Operation ID = operationId
-    DB-->>UI: Flow emits instant UI state (SSOT)
-    UI-->>Agent: Task displayed instantly with "Sync Pending" badge
+    note right of Pending
+        Unique work per user. App entry uses KEEP.
+        Mutations append using APPEND_OR_REPLACE.
+        WorkManager waits for connectivity.
+    end note
 
-    Repo->>WM: enqueueUniqueWork("StoreVisitSyncWork", KEEP, ...)
+    Pending --> InFlight: Active session matches owner and network is connected
+    Pending --> SessionPaused: Session is absent or belongs to another account
+    SessionPaused --> Pending: Sign in online as the same account
+    InFlight --> SessionPaused: HTTP 401 clears only the request session
+    InFlight --> Backoff: Network error, HTTP 5xx or incomplete acknowledgement
+    Backoff --> Pending: Next WorkManager attempt
+    InFlight --> Pending: Worker cancelled, process killed or connectivity lost
+    InFlight --> ValidationBlocked: Non-retryable request rejection
+    ValidationBlocked --> Pending: Correct the validation issue and trigger sync again
+    InFlight --> Acknowledged: Server committed operation and client matched its acknowledgement
 
-    alt Network Offline
-        WM-->>Repo: Network unavailable constraint. Wait for connectivity.
-        Note over Agent,DB: All tasks and photos safely persisted in Room & File Storage.
-    else Network Online
-        WM->>DB: Query pending operations from SyncQueue for active userId
-        DB-->>WM: Return pending operations list (with operationId)
+    note right of InFlight
+        Tasks and photos follow queue sequence.
+        Pending task batches finish before following photos.
+        Retries carry the same stored operation ID.
+        SQLite commits the mutation and account-scoped replay record together.
+        Photo metadata and JPEG bytes commit in the same transaction.
+    end note
 
-        loop For each pending operation
-            WM->>API: POST /tasks/sync (with Bearer Token & X-Client-Operation-Id)
-            Note over API: Mock Backend checks processed_operations table in mock_server.db
-
-            alt Operation New (Not Processed)
-                API->>API: Execute mutation & insert operationId into processed_operations
-                API-->>WM: Return HTTP 200/201 Success Envelope (succeededOperationIds)
-                WM->>DB: Atomic @Transaction (Update sync_status = SYNCED, remove/complete SyncQueue item)
-            else Operation Replayed (Already Processed)
-                API-->>WM: Return HTTP 200 Success Envelope (cached result)
-                WM->>DB: Atomic @Transaction (Update sync_status = SYNCED, remove SyncQueue item)
-            else HTTP 401 Session Expired
-                API-->>WM: Return HTTP 401 Unauthorized
-                WM->>DB: Invalidate active token in TokenManager
-                Note over DB,UI: CRITICAL: Local tasks and photo files are preserved!
-                WM-->>UI: Broadcast Session Expired -> Redirect to Login
-            else Transient Error (500 / Network Timeout)
-                API-->>WM: Network Failure / HTTP 500
-                WM->>DB: Update task sync_status = SYNC_FAILED, increment retryCount
-                WM-->>WM: Schedule Exponential Backoff Retry
-            end
-        end
-        DB-->>UI: Flow emits updated sync status
-        UI-->>Agent: UI badge updates to "Synced" or "Sync Failed"
-    end
+    note right of Acknowledged
+        Local Room status and queue removal commit together.
+        Local JPEGs remain available after upload.
+    end note
+    Acknowledged --> [*]

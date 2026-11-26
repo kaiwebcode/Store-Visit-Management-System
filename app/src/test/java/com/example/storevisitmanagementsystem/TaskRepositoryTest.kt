@@ -183,6 +183,11 @@ class TaskRepositoryTest {
             tasks.add(task)
         }
 
+        override fun updateTaskSyncStatus(taskId: String, syncStatus: String, syncError: String?) {
+            val idx = tasks.indexOfFirst { it.taskId == taskId }
+            if (idx != -1) tasks[idx] = tasks[idx].copy(syncStatus = syncStatus, syncError = syncError)
+        }
+
         override fun insertSyncQueue(syncOp: SyncQueueEntity) {
             syncOps.add(syncOp)
         }

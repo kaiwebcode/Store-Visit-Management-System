@@ -155,7 +155,7 @@ class MockDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, 
         }
     }
 
-    private fun saveSession(token: String, userId: String, expiresAt: String) {
+    fun saveSession(token: String, userId: String, expiresAt: String) {
         val db = writableDatabase
         val cv = ContentValues().apply {
             put("token", token)

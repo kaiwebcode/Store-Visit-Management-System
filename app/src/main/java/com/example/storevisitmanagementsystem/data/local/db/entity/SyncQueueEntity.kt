@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "sync_queue",
     indices = [
-        Index(value = ["user_id", "status"])
+        Index(value = ["user_id", "status"]),
+        Index(value = ["user_id", "status", "sequence_number"])
     ]
 )
 data class SyncQueueEntity(
@@ -41,5 +42,8 @@ data class SyncQueueEntity(
     val errorMessage: String? = null,
 
     @ColumnInfo(name = "created_at")
-    val createdAt: String
+    val createdAt: String,
+
+    @ColumnInfo(name = "sequence_number")
+    val sequenceNumber: Long = 0L
 )

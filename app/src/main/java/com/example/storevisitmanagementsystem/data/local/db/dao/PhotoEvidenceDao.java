@@ -1,5 +1,6 @@
 package com.example.storevisitmanagementsystem.data.local.db.dao;
 
+import androidx.annotation.Nullable;
 import androidx.room.Dao;
 import androidx.room.Delete;
 import androidx.room.Insert;
@@ -26,6 +27,9 @@ public interface PhotoEvidenceDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertPhoto(PhotoEvidenceEntity photo);
+
+    @Query("UPDATE photo_evidence SET upload_status = :uploadStatus, remote_url = :remoteUrl WHERE photo_id = :photoId")
+    void updatePhotoUploadStatus(String photoId, String uploadStatus, @Nullable String remoteUrl);
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertSyncQueue(SyncQueueEntity syncOp);

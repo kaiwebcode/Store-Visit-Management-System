@@ -33,8 +33,8 @@ The Store Visit Management System follows Google's recommended modern Android ap
                            v                 v
         +--------------------+             +-----------------------------+
         |   Local Data Source|             |      Remote Data Source     |
-        |  (Room DB, Files,  |             | (Retrofit -> Standalone     |
-        |   TokenManager)    |             |  SQLite-Backed Mock Backend)|
+        |  (Room DB v2,      |             | (Retrofit -> Dedicated      |
+        |   Files, TokenMgr) |             |  Node.js + SQLite Backend)  |
         +--------------------+             +-----------------------------+
 ```
 
@@ -52,157 +52,79 @@ All local data entities (`tasks`, `photo_evidence`, `sync_queue`, `store_assignm
 #### Delayed 401 Protection
 To prevent a delayed 401 response from an old network request from invalidating a newly authenticated session:
 1. `TokenManager` tracks `activeToken` and `activeUserId`.
-2. When a 401 response is intercepted, `AuthInterceptor` checks:
-   ```kotlin
-   if (requestToken == tokenManager.getActiveToken()) {
-       tokenManager.clearActiveTokenOnly()
-       eventBus.emit(SessionExpiredEvent)
-   } // Else: Ignore delayed 401 from superseded session token
-   ```
-
-#### Data Retention on Logout & Expiry
-Logging out or encountering session expiry clears active credentials in `TokenManager`, BUT **NEVER DELETES** Room database records, queue operations, or photo files. Unsynced data is preserved under `userId` and recovered when the user re-authenticates.
+2. When a 401 response is intercepted:
+   - Active token is cleared in `TokenManager`.
+   - WorkManager halts retries (`Result.failure()`).
+   - **CRITICAL DATA PRESERVATION:** All local Room database records, queue operations, and photo files remain preserved under `userId`.
 
 ---
 
-### 2.2 Account-Scoped Store Assignment Model
+### 2.2 WorkManager Synchronization & Monotonic Replay Engine
 
-To prevent two agents sharing a store from corrupting cached assignments:
-- **`StoreEntity`**: Store metadata (`storeId`, `storeCode`, `name`, `address`, `category`, `lastVisited`).
-- **`StoreAssignmentEntity`**: Account-scoped assignment junction (`userId`, `storeId`, `assignedAt`).
-- **Server-Side Authorization:** The backend validates that the Bearer token's `userId` matches `StoreAssignment` before fulfilling store or task requests.
-- **Client Validation:** `TaskRepository.createTask(...)` asserts `isStoreAssignedToUser(storeId, currentUserId)` before enqueuing task creation.
+#### Unique Scheduling & Constraints
+Sync operations are enqueued via `SyncManager` using `WorkManager.enqueueUniqueWork("StoreVisitSyncWork_${userId}", ExistingWorkPolicy.KEEP, ...)` with `NetworkType.CONNECTED` constraint and `BackoffPolicy.EXPONENTIAL`.
 
----
-
-### 2.3 Standalone SQLite-Backed Mock API & Idempotent Replay Protocol
-
-#### Backend Architecture (`mock_server.db`)
-The mock backend is a standalone SQLite-backed HTTP service containing:
-- `users`, `stores`, `store_assignments`, `tasks`, `photo_evidence`, `processed_operations`.
-
-#### Replay Keys & Payload Validation
-1. **Disambiguation:** `taskId`/`photoId` = stable domain entity IDs; `operationId` = immutable sync operation ID.
-2. **Replay Table Schema:**
-   ```sql
-   CREATE TABLE processed_operations (
-       operation_id TEXT PRIMARY KEY,
-       user_id TEXT NOT NULL,
-       payload_hash TEXT NOT NULL,
-       response_json TEXT NOT NULL,
-       processed_at INTEGER NOT NULL
-   );
-   ```
-3. **Idempotency Rule:**
-   - If `operation_id` exists and `payload_hash` matches: Returns cached `200 OK` response envelope.
-   - If `operation_id` exists BUT `payload_hash` differs: Returns `400 BAD_REQUEST` / `409 CONFLICT` ("Operation ID payload mismatch").
+#### Room Non-Destructive Migration (v1 -> v2) & Monotonic Ordering
+`AppDatabase` version 2 adds `sequence_number` (INTEGER NOT NULL DEFAULT 0) to `SyncQueueEntity`.
+`MIGRATION_1_2` populates `sequence_number = rowid` for existing v1 operations, preserving exact insertion order.
+Operations are queried with `ORDER BY sequence_number ASC, created_at ASC` to guarantee task creation precedes dependent photo uploads.
 
 ---
 
-### 2.4 Photo Evidence Lifecycle & Durable File Management
+### 2.3 Standalone Node.js + Express + SQLite Sync Backend (`server/`)
 
-#### Lifecycle Ordering
-1. **Task Creation:** Local `TaskEntity` created (`syncStatus = PENDING_INSERT`).
-2. **Photo Capture:** Image captured to `.tmp`, compressed, and atomically renamed to `.jpg` in `context.filesDir/task_photos/{userId}/`. `PhotoEvidenceEntity` created (`uploadStatus = PENDING_UPLOAD`).
-3. **Photo Upload:** `POST /photos/upload` executes. Mock server returns `remoteUrl` and sets status `UPLOADED`.
-4. **Task Completion:** `PUT /tasks/{id}` executes referencing `remoteUrl`.
-5. **Final Local ACK:** Task and Photo marked `SYNCED` locally only when both operations receive server ACK.
+#### Backend Architecture
+A dedicated Node.js server running in `server/` with persistent SQLite database `server/data/backend.db` and photo upload folder `server/uploads/`.
 
-#### File Crash Recovery
-- On app launch, `ImageStorageManager.cleanupOrphanedTempFiles()` deletes `.tmp` files older than 24 hours.
-- Finalized `.jpg` files remain preserved until server task ACK.
-
-#### Compression vs API Validation
-- **Client Compressor:** Downscales to max 1024x1024, JPEG ~80%, target size < 300KB.
-- **API Upload Validator:** Server validates file size <= 500KB and mime type `image/jpeg`.
+#### Idempotency & Replay Protocol
+The backend tracks `processed_operations(operation_id, user_id, payload_hash, response_json, processed_at)`.
+When a replayed request arrives (e.g. following a timeout-after-server-save scenario), the server returns the stored success response without creating duplicate database records on the backend.
 
 ---
 
-### 2.5 WorkManager Recovery Engine & Safe Acknowledgements
-
-#### Unique Work & Recovery Triggers
-Work is enqueued via `WorkManager.enqueueUniqueWork("StoreVisitSyncWork", ExistingWorkPolicy.KEEP, ...)` with `NetworkType.CONNECTED`.
-
-Synchronization is triggered by 4 distinct events:
-1. **App Startup:** `SyncRecoveryManager.onAppLaunch()` checks pending queue items.
-2. **Re-Login:** `LoginViewModel` triggers sync upon successful re-authentication.
-3. **Network Reconnect:** `ConnectivityManager` listener triggers sync on network recovery.
-4. **Manual Retry:** User taps "Retry Failed Sync" button in Sync Status UI.
-
-#### Revision ACKs & Transient vs Permanent Errors
-- Server returns `succeededOperationIds` with operation revision numbers.
-- A task transitions to `SYNCED` only when all required operations (creation/update + photo upload) receive ACK.
-- **Transient Failures (5xx, Network Timeout):** Trigger exponential backoff retry.
-- **Permanent Failures (400, 422):** Mark item `SYNC_FAILED` with error reason for user review.
-
----
-
-### 2.6 Package Structure & DI Interfaces
+### 2.4 Package Structure & DI Interfaces
 
 ```
 com.example.storevisitmanagementsystem/
 ├── data/
 │   ├── local/
 │   │   ├── db/
-│   │   │   ├── AppDatabase.kt
+│   │   │   ├── AppDatabase.java (v2 + MIGRATION_1_2)
 │   │   │   ├── dao/
-│   │   │   │   ├── StoreDao.kt
-│   │   │   │   ├── StoreAssignmentDao.kt
-│   │   │   │   ├── TaskDao.kt
-│   │   │   │   ├── PhotoEvidenceDao.kt
-│   │   │   │   └── SyncQueueDao.kt
+│   │   │   │   ├── TaskDao.java
+│   │   │   │   ├── PhotoEvidenceDao.java
+│   │   │   │   └── SyncQueueDao.java
 │   │   │   └── entity/
-│   │   │       ├── StoreEntity.kt
-│   │   │       ├── StoreAssignmentEntity.kt
 │   │   │       ├── TaskEntity.kt
 │   │   │       ├── PhotoEvidenceEntity.kt
 │   │   │       └── SyncQueueEntity.kt
-│   │   ├── preferences/
-│   │   │   ├── ITokenManager.kt
-│   │   │   └── TokenManagerImpl.kt
-│   │   └── storage/
-│   │       ├── IImageStorageManager.kt
-│   │       └── ImageStorageManagerImpl.kt
+│   │   └── preferences/
+│   │       ├── ITokenManager.kt
+│   │       └── TokenManagerImpl.kt
 │   ├── remote/
 │   │   ├── api/
 │   │   │   ├── ApiService.kt
+│   │   │   ├── ApiClient.kt
 │   │   │   └── mock/
-│   │   │       ├── MockApiInterceptor.kt
-│   │   │       ├── StandaloneMockServer.kt
-│   │   │       └── MockDatabase.kt  // SQLite mock_server.db
+│   │   │       └── MockApiInterceptor.kt
 │   │   └── model/
-│   │       ├── request/
-│   │       └── response/
+│   │       └── SyncModels.kt
 │   └── repository/
-│       ├── IAuthRepository.kt / AuthRepositoryImpl.kt
-│       ├── IStoreRepository.kt / StoreRepositoryImpl.kt
-│       ├── ITaskRepository.kt / TaskRepositoryImpl.kt
-│       ├── IPhotoRepository.kt / PhotoRepositoryImpl.kt
-│       └── ISyncRepository.kt / SyncRepositoryImpl.kt
+│       ├── AuthRepositoryImpl.kt
+│       ├── StoreRepositoryImpl.kt
+│       ├── TaskRepositoryImpl.kt
+│       ├── PhotoRepositoryImpl.kt
+│       └── SyncRepositoryImpl.kt
 ├── sync/
 │   ├── SyncWorker.kt
-│   └── SyncRecoveryManager.kt
+│   └── SyncManager.kt
 ├── ui/
-│   ├── auth/
-│   │   ├── LoginActivity.kt
-│   │   └── LoginViewModel.kt
-│   ├── store/
-│   │   ├── StoreSelectionActivity.kt
-│   │   ├── StoreAdapter.kt
-│   │   └── StoreViewModel.kt
-│   ├── task/
-│   │   ├── TaskListActivity.kt
-│   │   ├── TaskCreateEditActivity.kt
-│   │   ├── TaskAdapter.kt
-│   │   └── TaskViewModel.kt
-│   ├── photo/
-│   │   ├── PhotoPreviewActivity.kt
-│   │   └── PhotoViewModel.kt
-│   └── sync/
-│       ├── SyncStatusActivity.kt
-│       └── SyncStatusViewModel.kt
+│   └── task/
+│       ├── TaskListActivity.kt
+│       ├── TaskCreateEditActivity.kt
+│       ├── TaskDetailActivity.kt
+│       ├── TaskAdapter.kt
+│       └── PhotoAdapter.kt
 └── util/
-    ├── ImageCompressor.kt
-    ├── NetworkUtils.kt
     └── Constants.kt
 ```

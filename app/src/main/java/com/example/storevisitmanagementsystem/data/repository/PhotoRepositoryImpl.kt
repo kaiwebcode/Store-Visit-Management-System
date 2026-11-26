@@ -76,20 +76,21 @@ class PhotoRepositoryImpl(
                 uploadStatus = "PENDING_UPLOAD",
                 createdAt = timestamp
             )
-            val syncOp = SyncQueueEntity(
-                operationId = "op_${UUID.randomUUID().toString().take(12)}",
-                entityType = "PHOTO",
-                entityId = photoId,
-                operationType = "UPLOAD_PHOTO",
-                userId = userId,
-                payloadJson = gson.toJson(photo),
-                status = "PENDING",
-                createdAt = timestamp
-            )
-
             runInTransaction {
                 check(isSessionCurrent()) { "The session or selected store has changed." }
                 check(findActiveTask(taskId, userId, storeId) != null) { "Task is unavailable for this account and store." }
+                val nextSeq = (appDatabase?.syncQueueDao()?.getMaxSequenceNumber() ?: 0L) + 1L
+                val syncOp = SyncQueueEntity(
+                    operationId = "op_${UUID.randomUUID().toString().take(12)}",
+                    entityType = "PHOTO",
+                    entityId = photoId,
+                    operationType = "UPLOAD_PHOTO",
+                    userId = userId,
+                    payloadJson = gson.toJson(photo),
+                    status = "PENDING",
+                    createdAt = timestamp,
+                    sequenceNumber = nextSeq
+                )
                 photoDao.insertPhoto(photo)
                 photoDao.insertSyncQueue(syncOp)
             }

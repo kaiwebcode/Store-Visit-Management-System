@@ -18,6 +18,7 @@ import com.example.storevisitmanagementsystem.data.repository.PhotoRepositoryImp
 import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityTaskListBinding
 import com.example.storevisitmanagementsystem.util.Constants
+import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
 import com.example.storevisitmanagementsystem.util.Resource
 import kotlinx.coroutines.launch
@@ -28,6 +29,7 @@ class TaskListActivity : AppCompatActivity() {
     private lateinit var taskAdapter: TaskAdapter
 
     private var storeId: String = ""
+    private var listUserId: String? = null
     private var storeName: String = "Store Tasks"
 
     private val viewModel: TaskViewModel by viewModels {
@@ -54,7 +56,18 @@ class TaskListActivity : AppCompatActivity() {
         setupListeners()
         observeViewModel()
 
-        viewModel.observeTasksForStore(storeId)
+        listUserId = viewModel.getActiveUserId()
+        listUserId?.let { userId ->
+            viewModel.observeTasksForStore(storeId)
+            com.example.storevisitmanagementsystem.sync.SyncManager.scheduleSync(applicationContext, userId)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (listUserId == null || viewModel.getActiveUserId() != listUserId) {
+            LoginActivity.requireSignIn(this)
+        }
     }
 
     private fun setupUI() {
@@ -63,12 +76,11 @@ class TaskListActivity : AppCompatActivity() {
 
         taskAdapter = TaskAdapter(
             onTaskClick = { task ->
-                val intent = Intent(this, TaskDetailActivity::class.java).apply {
-                    putExtra(Constants.EXTRA_TASK_ID, task.taskId)
-                    putExtra(Constants.EXTRA_STORE_ID, storeId)
-                    putExtra(Constants.EXTRA_STORE_NAME, storeName)
+                if (viewModel.getActiveUserId() != task.userId) {
+                    LoginActivity.requireSignIn(this)
+                } else {
+                    startActivity(TaskDetailActivity.createIntent(this, task, storeName))
                 }
-                startActivity(intent)
             },
             onCompleteToggle = { task ->
                 lifecycleScope.launch {

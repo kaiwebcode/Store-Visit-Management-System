@@ -32,6 +32,9 @@ public interface TaskDao {
     @Update
     void updateTask(TaskEntity task);
 
+    @Query("UPDATE tasks SET sync_status = :syncStatus, sync_error = :syncError WHERE task_id = :taskId")
+    void updateTaskSyncStatus(String taskId, String syncStatus, @Nullable String syncError);
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertSyncQueue(SyncQueueEntity syncOp);
 }
