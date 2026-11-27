@@ -124,7 +124,10 @@ class TaskRepositoryImpl(
                 priority = priority.ifBlank { task.priority },
                 dueDate = dueDate ?: task.dueDate,
                 updatedAt = timestamp,
-                syncStatus = if (task.syncStatus == "PENDING_INSERT") "PENDING_INSERT" else "PENDING_UPDATE"
+                syncStatus = when (task.syncStatus) {
+                    "SYNC_FAILED", "PENDING_INSERT" -> task.syncStatus
+                    else -> "PENDING_UPDATE"
+                }
             )
         }
     }
@@ -143,7 +146,10 @@ class TaskRepositoryImpl(
                 task.copy(
                     status = status,
                     updatedAt = timestamp,
-                    syncStatus = if (task.syncStatus == "PENDING_INSERT") "PENDING_INSERT" else "PENDING_UPDATE"
+                    syncStatus = when (task.syncStatus) {
+                        "SYNC_FAILED", "PENDING_INSERT" -> task.syncStatus
+                        else -> "PENDING_UPDATE"
+                    }
                 )
             }
         }
@@ -151,7 +157,11 @@ class TaskRepositoryImpl(
 
     override suspend fun softDeleteTask(taskId: String, userId: String, storeId: String): Resource<Unit> {
         return mutateTask(taskId, userId, storeId, "DELETE", "Failed to delete task") { task, timestamp ->
-            task.copy(isDeleted = true, updatedAt = timestamp, syncStatus = "PENDING_DELETE")
+            task.copy(
+                isDeleted = true,
+                updatedAt = timestamp,
+                syncStatus = if (task.syncStatus == "SYNC_FAILED") task.syncStatus else "PENDING_DELETE"
+            )
         }
     }
 

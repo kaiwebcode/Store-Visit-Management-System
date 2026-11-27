@@ -11,6 +11,7 @@ import com.example.storevisitmanagementsystem.data.remote.api.ApiService
 import com.example.storevisitmanagementsystem.data.remote.model.*
 import com.example.storevisitmanagementsystem.data.repository.SyncRepositoryImpl
 import com.example.storevisitmanagementsystem.util.Resource
+import com.example.storevisitmanagementsystem.sync.InFlightSync
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -128,9 +129,8 @@ class Day18DebuggingAndMonitoringTest {
         assertEquals("SYNCED", fakeTaskDao.tasks.single().syncStatus)
         assertTrue(fakeSyncQueueDao.ops.isEmpty())
 
-        // Confirm server received exactly the single operationId without duplication
-        assertEquals(1, fakeApiService.syncTaskRequests.size)
-        assertEquals("op_tsk_srv_500", fakeApiService.syncTaskRequests.single().operations.single().operationId)
+        val operationIds = fakeApiService.syncTaskRequests.map { it.operations.single().operationId }
+        assertEquals(List(3) { "op_tsk_srv_500" }, operationIds)
     }
 
     @Test
@@ -168,7 +168,7 @@ class Day18DebuggingAndMonitoringTest {
     }
 
     @Test
-    fun `Scenario D - App restart simulation preserves queued offline records`() = runTest {
+    fun `A recreated repository drains existing queued records`() = runTest {
         signIn("token_restart", "usr_restart")
         createPendingTask("tsk_restart_01", "usr_restart")
         val photoFile = createPendingPhoto("pho_restart_01", "tsk_restart_01", "usr_restart")
@@ -199,7 +199,7 @@ class Day18DebuggingAndMonitoringTest {
     }
 
     @Test
-    fun `Idempotent replay - duplicate server acknowledgements do not double-process tasks or photos`() = runTest {
+    fun `A second run with an acknowledged queue makes no additional request`() = runTest {
         signIn("token_idempotent", "usr_idempotent")
         val task = createPendingTask("tsk_idem_01", "usr_idempotent")
 
@@ -214,6 +214,69 @@ class Day18DebuggingAndMonitoringTest {
         assertTrue(result2 is Resource.Success)
         assertEquals(0, (result2 as Resource.Success).data)
         assertEquals(1, fakeApiService.syncTaskRequests.size) // No extra call
+    }
+
+    @Test
+    fun taskRemainsPendingUntilPhotoAcknowledgementAndExposesLiveUpload() = runTest {
+        signIn("valid_token", "usr_001")
+        createPendingTask("tsk_with_photo", "usr_001")
+        createPendingPhoto("pho_pending", "tsk_with_photo", "usr_001")
+        fakeApiService.photoResponseCode = 504
+        fakeApiService.onPhotoRequest = {
+            assertEquals("PENDING_UPDATE", fakeTaskDao.tasks.single().syncStatus)
+            assertTrue(InFlightSync.Record("usr_001", "tsk_with_photo") in InFlightSync.tasks.value)
+            assertTrue(InFlightSync.Record("usr_001", "pho_pending") in InFlightSync.photos.value)
+        }
+
+        assertTrue(syncRepository.syncPendingOperations("usr_001") is Resource.Error)
+        assertEquals("PENDING_UPDATE", fakeTaskDao.tasks.single().syncStatus)
+        assertTrue(InFlightSync.tasks.value.isEmpty())
+        assertTrue(InFlightSync.photos.value.isEmpty())
+
+        fakeApiService.photoResponseCode = null
+        assertEquals(1, syncRepository.syncPendingOperations("usr_001").data)
+        assertEquals("SYNCED", fakeTaskDao.tasks.single().syncStatus)
+    }
+
+    @Test
+    fun rejectedPhotoIsDurableAndDoesNotBlockAnIndependentTask() = runTest {
+        signIn("valid_token", "usr_001")
+        createPendingTask("tsk_with_photo", "usr_001")
+        val jpeg = createPendingPhoto("pho_bad", "tsk_with_photo", "usr_001")
+        createPendingTask("tsk_independent", "usr_001")
+        fakeApiService.photoResponseCode = 400
+
+        assertEquals(2, syncRepository.syncPendingOperations("usr_001").data)
+        assertEquals("SYNC_FAILED", fakeTaskDao.tasks.first().syncStatus)
+        assertEquals("SYNCED", fakeTaskDao.tasks.last().syncStatus)
+        assertEquals("UPLOAD_FAILED", fakePhotoDao.photos.single().uploadStatus)
+        assertEquals("REJECTED", fakeSyncQueueDao.ops.single().status)
+        assertNotNull(fakeSyncQueueDao.ops.single().errorMessage)
+        assertTrue(jpeg.exists())
+
+        assertEquals(0, syncRepository.syncPendingOperations("usr_001").data)
+        assertEquals(1, fakeApiService.photoAttempts)
+    }
+
+    @Test
+    fun rejectedTaskIsIsolatedAndItsLaterPhotoWaitsAcrossRuns() = runTest {
+        signIn("valid_token", "usr_001")
+        createPendingTask("tsk_bad", "usr_001")
+        createPendingTask("tsk_good", "usr_001")
+        val jpeg = createPendingPhoto("pho_depends_on_bad", "tsk_bad", "usr_001")
+        fakeApiService.rejectedTaskId = "tsk_bad"
+
+        assertEquals(1, syncRepository.syncPendingOperations("usr_001").data)
+        assertEquals("SYNC_FAILED", fakeTaskDao.tasks.first().syncStatus)
+        assertEquals("SYNCED", fakeTaskDao.tasks.last().syncStatus)
+        assertEquals(listOf("REJECTED", "PENDING"), fakeSyncQueueDao.ops.map { it.status })
+        assertEquals(0, fakeApiService.photoAttempts)
+
+        val requestCount = fakeApiService.syncTaskRequests.size
+        assertEquals(0, syncRepository.syncPendingOperations("usr_001").data)
+        assertEquals(requestCount, fakeApiService.syncTaskRequests.size)
+        assertEquals(0, fakeApiService.photoAttempts)
+        assertTrue(jpeg.exists())
     }
 
     // --- Helpers ---
@@ -292,7 +355,7 @@ class Day18DebuggingAndMonitoringTest {
             flowOf(ops.filter { it.userId == userId && it.status == "PENDING" })
 
         override fun getPendingOperationsSync(userId: String): List<SyncQueueEntity> =
-            ops.filter { it.userId == userId && it.status in setOf("PENDING", "SYNCING", "FAILED") }
+            ops.filter { it.userId == userId && it.status in setOf("PENDING", "SYNCING", "FAILED", "REJECTED") }
                 .sortedBy { it.sequenceNumber }
 
         override fun getMaxSequenceNumber(): Long? = ops.maxOfOrNull { it.sequenceNumber }
@@ -338,7 +401,8 @@ class Day18DebuggingAndMonitoringTest {
         val photos = mutableListOf<PhotoEvidenceEntity>()
 
         override fun getPhotosForTask(taskId: String, userId: String): Flow<List<PhotoEvidenceEntity>> = flowOf(photos)
-        override fun getPhotosForTaskSync(taskId: String, userId: String): List<PhotoEvidenceEntity> = photos
+        override fun getPhotosForTaskSync(taskId: String, userId: String): List<PhotoEvidenceEntity> =
+            photos.filter { it.taskId == taskId && it.userId == userId }
         override fun getPhotoById(photoId: String, userId: String): PhotoEvidenceEntity? =
             photos.find { it.photoId == photoId }
         override fun getAllLocalPhotoFilePaths(): List<String> = photos.map { it.localFilePath }
@@ -384,6 +448,10 @@ class Day18DebuggingAndMonitoringTest {
         var throwNetworkError = false
         var httpErrorCode: Int? = null
         val syncTaskRequests = mutableListOf<SyncBatchRequest>()
+        var rejectedTaskId: String? = null
+        var photoResponseCode: Int? = null
+        var photoAttempts = 0
+        var onPhotoRequest: () -> Unit = {}
 
         override suspend fun login(request: LoginRequest): Response<ApiResponse<LoginResponse>> =
             Response.success(ApiResponse(success = true, data = null))
@@ -395,12 +463,15 @@ class Day18DebuggingAndMonitoringTest {
             Response.success(ApiResponse(success = true, data = emptyList()))
 
         override suspend fun syncTasks(token: String, request: SyncBatchRequest): Response<ApiResponse<SyncBatchResponse>> {
+            syncTaskRequests.add(request)
             if (throwNetworkError) throw IOException("Network failure: Host unreachable")
+            if (request.operations.any { it.entityId == rejectedTaskId }) {
+                return Response.error(403, "Unassigned store".toResponseBody(null))
+            }
             httpErrorCode?.let { code ->
                 return Response.error(code, "Simulated HTTP $code Error".toResponseBody(null))
             }
 
-            syncTaskRequests.add(request)
             val succeededIds = request.operations.map { it.operationId }
             return Response.success(
                 ApiResponse(
@@ -421,8 +492,10 @@ class Day18DebuggingAndMonitoringTest {
             taskId: RequestBody,
             file: MultipartBody.Part
         ): Response<ApiResponse<PhotoUploadResponse>> {
+            photoAttempts++
+            onPhotoRequest()
             if (throwNetworkError) throw IOException("Network failure: Host unreachable during photo upload")
-            httpErrorCode?.let { code ->
+            (photoResponseCode ?: httpErrorCode)?.let { code ->
                 return Response.error(code, "Simulated HTTP $code Error".toResponseBody(null))
             }
 

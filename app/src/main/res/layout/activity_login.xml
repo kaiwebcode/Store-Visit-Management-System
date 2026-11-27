@@ -45,7 +45,7 @@
                 android:layout_height="wrap_content" android:minHeight="60dp"
                 android:inputType="text" android:singleLine="true"
                 android:paddingStart="14dp" android:paddingEnd="14dp"
-                android:text="agent1" android:textColor="@color/sv_text"
+                android:textColor="@color/sv_text"
                 android:textColorHint="@color/sv_muted"/>
         </com.google.android.material.textfield.TextInputLayout>
         <com.google.android.material.textfield.TextInputLayout
@@ -62,7 +62,7 @@
                 android:layout_height="wrap_content" android:minHeight="60dp"
                 android:inputType="textPassword" android:singleLine="true"
                 android:paddingStart="14dp" android:paddingEnd="14dp"
-                android:text="password123" android:textColor="@color/sv_text" />
+                android:textColor="@color/sv_text" />
         </com.google.android.material.textfield.TextInputLayout>
         <TextView android:id="@+id/tvError" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="10dp"
@@ -76,17 +76,5 @@
         <ProgressBar android:id="@+id/pbLoading" android:layout_width="wrap_content"
             android:layout_height="wrap_content" android:layout_gravity="center_horizontal"
             android:layout_marginTop="16dp" android:visibility="gone"/>
-        <LinearLayout android:id="@+id/debugCredentialsContainer"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:layout_marginTop="36dp"
-            android:padding="18dp" android:background="@drawable/sv_card_background">
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="ⓘ  Test Credentials (Debug Only)"
-                android:textSize="16sp" android:textStyle="bold" android:textColor="@color/sv_text"/>
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="12dp" android:textSize="13sp"
-                android:textColor="@color/sv_muted"
-                android:text="• agent1 / password123 (Alex Mercer)\n• agent2 / password123 (Sarah Connor)"/>
-        </LinearLayout>
     </LinearLayout>
 </ScrollView>

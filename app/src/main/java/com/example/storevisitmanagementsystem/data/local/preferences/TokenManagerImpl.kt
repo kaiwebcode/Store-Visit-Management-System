@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.example.storevisitmanagementsystem.util.Constants
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
 
 class TokenManagerImpl(context: Context) : ITokenManager {
 
@@ -24,8 +29,9 @@ class TokenManagerImpl(context: Context) : ITokenManager {
         name: String,
         role: String
     ) = synchronized(sessionLock) {
-        prefs.edit()
-            .putString(Constants.KEY_AUTH_TOKEN, token)
+        val editor = prefs.edit()
+        if (getUserId() != userId) editor.remove(Constants.KEY_SELECTED_STORE_ID)
+        editor.putString(Constants.KEY_AUTH_TOKEN, token)
             .putString(Constants.KEY_USER_ID, userId)
             .putString(Constants.KEY_USERNAME, username)
             .putString(Constants.KEY_USER_NAME, name)
@@ -64,6 +70,15 @@ class TokenManagerImpl(context: Context) : ITokenManager {
     override fun getSelectedStoreId(): String? {
         return prefs.getString(Constants.KEY_SELECTED_STORE_ID, null)
     }
+
+    fun observeSessionActive(): Flow<Boolean> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == Constants.KEY_AUTH_TOKEN || key == null) trySend(isLoggedIn())
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(isLoggedIn())
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.buffer(Channel.CONFLATED)
 
     override fun isLoggedIn(): Boolean {
         return !getAuthToken().isNull_or_empty_or_blank()

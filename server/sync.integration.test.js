@@ -23,6 +23,9 @@ let db;
 let base;
 let agent1;
 let agent2;
+let serverOutput = '';
+const issuedTokens = [];
+const fixturePassword = 'password123';
 
 const run = (sql, args = []) => new Promise((resolve, reject) => {
     db.run(sql, args, error => error ? reject(error) : resolve());
@@ -42,8 +45,9 @@ async function request(url, token, body, headers = {}) {
 }
 
 async function login(username) {
-    const loginResponse = await request('/auth/login', null, { username, password: 'password123' });
+    const loginResponse = await request('/auth/login', null, { username, password: fixturePassword });
     assert.equal(loginResponse.status, 200);
+    issuedTokens.push(loginResponse.data.token);
     return loginResponse.data.token;
 }
 
@@ -87,9 +91,12 @@ before(async () => {
     ]);
 
     server = fork(path.join(__dirname, 'server.js'), [], {
-        env: { ...process.env, PORT: '0', STORE_VISIT_BIND_HOST: '127.0.0.1', STORE_VISIT_DATA_DIR: testDir, STORE_VISIT_UPLOADS_DIR: path.join(testDir, 'uploads') },
-        stdio: ['ignore', 'ignore', 'ignore', 'ipc']
+        env: { ...process.env, PORT: '0', STORE_VISIT_TEST_FAULTS: '1', STORE_VISIT_TEST_HEADERS: '1', STORE_VISIT_BIND_HOST: '127.0.0.1', STORE_VISIT_DATA_DIR: testDir, STORE_VISIT_UPLOADS_DIR: path.join(testDir, 'uploads') },
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     });
+    for (const stream of [server.stdout, server.stderr]) {
+        stream.setEncoding('utf8').on('data', chunk => { serverOutput += chunk; });
+    }
     const port = await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Test backend did not start')), 10000);
         server.once('message', message => { clearTimeout(timeout); resolve(message.port); });
@@ -216,4 +223,75 @@ test('photo write failure leaves no metadata or bytes and retry is idempotent af
     assert.equal((await photo(agent1, { ...upload, file: changedJpeg })).status, 409);
     assert.equal((await select("SELECT 1 FROM photo_evidence WHERE photo_id = 'saved_photo'")).length, 1);
     assert.equal((await select("SELECT 1 FROM processed_operations WHERE operation_id = 'saved_photo_op'")).length, 1);
+});
+
+async function armFault(mode, token, operationId, target = 'task') {
+    const sessionId = createHash('sha256').update(token).digest('hex');
+    const result = await request('/debug/sync-fault', null, { target, mode, operationId, sessionId });
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.data, { target, mode, operationId });
+}
+
+test('concurrent clients with the same operation ID only see 500 on the targeted session', async () => {
+    const pending = operation('targeted_500', 'targeted_500_task', 1);
+    const other = operation(pending.operationId, 'other_500_task', 1, { userId: 'usr_002', storeId: 'str_201' });
+    await armFault('500', agent1, pending.operationId);
+    const [targeted, unrelated] = await Promise.all([sync(agent1, [pending]), sync(agent2, [other])]);
+    assert.equal(targeted.status, 500);
+    assert.equal(unrelated.status, 200);
+    assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'targeted_500_task'")).length, 0);
+    assert.equal((await sync(agent1, [pending])).status, 200);
+});
+
+test('pre-commit 504 matches the operation and a different operation cannot consume it', async () => {
+    const pending = operation('targeted_504', 'targeted_504_task', 1);
+    await armFault('504', agent1, pending.operationId);
+    assert.equal((await sync(agent1, [operation('other_504', 'other_504_task', 1)])).status, 200);
+    assert.equal((await sync(agent1, [pending])).status, 504);
+    assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'targeted_504_task'")).length, 0);
+    assert.equal((await sync(agent1, [pending])).status, 200);
+});
+
+test('post-commit photo timeout targets the multipart operation and replays without duplicates', async () => {
+    const upload = { photoId: 'targeted_photo', taskId: 'ordered_task', operationId: 'targeted_photo_op' };
+    await armFault('504-after-save', agent1, upload.operationId, 'photo');
+    const other = { ...upload, photoId: 'other_targeted_photo', operationId: 'other_targeted_photo_op' };
+    assert.equal((await photo(agent1, other)).status, 201);
+    assert.equal((await photo(agent1, upload)).status, 504);
+    assert.equal((await photo(agent1, upload)).data.operationId, upload.operationId);
+    assert.equal((await select("SELECT 1 FROM photo_evidence WHERE photo_id = 'targeted_photo'")).length, 1);
+    assert.equal((await select("SELECT 1 FROM processed_operations WHERE operation_id = 'targeted_photo_op'")).length, 1);
+});
+
+test('expiry invalidates only the intended session, including two logins for one account', async () => {
+    const intendedToken = await login('agent1');
+    const otherToken = await login('agent1');
+    const pending = operation('targeted_expire', 'targeted_expire_task', 1);
+    await armFault('expire', intendedToken, pending.operationId);
+    assert.equal((await sync(otherToken, [pending])).status, 200);
+    assert.equal((await sync(intendedToken, [pending])).status, 401);
+    assert.equal((await request('/stores/assigned', intendedToken)).status, 401);
+    assert.equal((await request('/stores/assigned', otherToken)).status, 200);
+    const freshToken = await login('agent1');
+    assert.deepEqual((await sync(freshToken, [pending])).data.succeededOperationIds, [pending.operationId]);
+    assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'targeted_expire_task'")).length, 1);
+});
+
+test('interruption closes only the intended request and the same operation then replays', async () => {
+    const pending = operation('interrupted_op', 'interrupted_task', 1);
+    await armFault('interrupt', agent1, pending.operationId);
+    await Promise.all([
+        assert.rejects(() => sync(agent1, [pending]), { name: 'TypeError' }),
+        sync(agent1, [operation('other_interrupt', 'other_interrupt_task', 1)])
+            .then(result => assert.equal(result.status, 200))
+    ]);
+    assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'interrupted_task'")).length, 0);
+    assert.deepEqual((await sync(agent1, [pending])).data.succeededOperationIds, [pending.operationId]);
+    assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'interrupted_task'")).length, 1);
+});
+
+test('fault diagnostics contain a session fingerprint without logging credentials or bearer tokens', () => {
+    assert.match(serverOutput, /sessionId=[a-f0-9]{64}/);
+    assert.equal(serverOutput.includes(fixturePassword), false, 'Fixture password appeared in diagnostics');
+    assert.equal(issuedTokens.some(token => serverOutput.includes(token)), false, 'Bearer token appeared in diagnostics');
 });

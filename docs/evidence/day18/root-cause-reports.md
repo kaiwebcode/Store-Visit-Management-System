@@ -1,56 +1,32 @@
-# Day 18 Root Cause & Diagnosis Reports
+# Day 18 root causes and fixes
 
-**Project:** Store Visit Management System  
-**Branch:** `feature/day18-debug-monitor`  
-**Device:** OnePlus EB2101  
-**Package:** `com.example.storevisitmanagementsystem.day18`  
-**Backend:** `http://192.168.1.111:3000/v1`  
-**Date:** Thursday (Week 4 — Day 18)  
+Branch `feature/day18-debug-monitor`. Target device OnePlus EB2101. Debug backend `192.168.1.111:3000`.
 
----
+## Authentication fallback
 
-## 1. Confirmed Root Cause: Authentication Fallback & WorkManager Sync Pause
+- **Expected** — Debug sign-in with the Node backend configured establishes a backend session. If the backend is unreachable, sign-in reports a network error and any queued work remains on the device.
+- **Observed on the earlier build** — The Android worker skipped queued work because it held a local-only mock session. The earlier debug host default was `192.168.1.110`. The login interceptor caught backend connection failures and silently used local mock login. Logcat establishes the local-only pause. The original failed connection itself was not captured. [Pause trace](logs/auth-recovery-debug.txt)
+- **Fix and evidence** — Debug Node login propagates transport failures and routes legacy local-only sessions back to sign-in. Both task and photo sync reject local-only sessions. An earlier successful backend-session run acknowledged a task and a linked photo. This is evidence of recovery from the local-only session problem. [Recovery trace](logs/auth-fix-verification.txt) · [Backend rows](api/network-recovery-success.json)
 
-### Initial Problem Statement
-Initial tasks and photo evidence created on the physical OnePlus device remained stuck in local `PENDING` status, and the Node.js backend SQLite database summary showed 0 matching records.
+## Offline task creation and cold restart
 
-### Root Cause Analysis & Evidence
-1. **Outdated Backend Host Default:** `app/build.gradle.kts` defaulted `day17BackendHost` to `"192.168.1.110"`. When built without passing `-Pday17BackendHost=192.168.1.111`, `BuildConfig.DAY17_BACKEND_HOST` compiled as `"192.168.1.110"`.
-2. **Silent Local Fallback:** On the OnePlus device (where backend was running at `192.168.1.111`), `MockApiInterceptor.kt` attempted connecting to `192.168.1.110:3000/v1/auth/login`. The connection failed with `IOException`.
-3. **Local Mock Token Trap:** `MockApiInterceptor.kt` caught `IOException` and silently called `handleLogin()`, generating a local mock session token starting with `mock_token_` (`Constants.LOCAL_MOCK_TOKEN_PREFIX`).
-4. **WorkManager Paused:** `SyncRepositoryImpl.kt` intentionally skips backend API sync calls when the session token starts with `mock_token_` to prevent sending unauthenticated requests. Logcat recorded:
-   ```text
-   D/StoreVisitSync: Sync skipped: Local-only mock session for userId=usr_001
-   I/StoreVisitSync: SyncWorker ... paused waiting for backend sign-in: Local-only session. Backend sign-in required.
-   ```
-5. **Data Protection Preserved:** Local Room database records (`TaskEntity`, `PhotoEvidenceEntity`, `SyncQueueEntity`) for `usr_001` remained 100% intact in SQLite on the OnePlus device.
+- **Expected** — After online sign-in and store selection, agents can create tasks, attach photos, and reopen them offline after a process restart.
+- **Observed on the earlier build** — The reported task save returned “Network error. Could not connect to store service.” The old save paths used `validateSelectedStore()`, which called the assigned-stores API before writing to Room. A subsequent change routed store selection through Node and left the launcher unable to restore the store after a cold offline restart.
+- **Fix and evidence** — The store repository caches assignments per account and uses them on transport failure. Authoritative HTTP 401 invalidates the matching session without serving cached stores. Task and photo saves check the active account, selected store, and cached authorization without calling the API. JVM tests verify offline save and repository recreation. The historical backend data contains one `Day18 Offline fix 1` task and one linked photo. The saved Android log for that run is empty, so the snapshot establishes the backend result only. [Offline recovery rows](api/offline-fix-recovery.json)
 
-### Verified Fix & Recovery Path
-- Updated Gradle default backend host to `192.168.1.111`, updated interceptor error handling to throw `IOException` on connection failure, and updated session checks in `LoginActivity.kt`.
-- **Physical Verification Logcat:** [`logs/auth-fix-verification.txt`](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/evidence/day18/logs/auth-fix-verification.txt)
-- **Backend Database Snapshot:** [`api/network-recovery-success.json`](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/evidence/day18/api/network-recovery-success.json) (`Day18 Network A 01`, `tsk_dd0487b8-15c`, photo `pho_387c072c-f60`).
+## Final code blocker fixes
 
----
+- **Concurrent 401 responses.** If the worker cleared the token first, the store endpoint's late 401 was treated as an account change. Store Selection now observes the current session and requests sign-in when it is cleared. It checks the session again before navigating. An old response cannot clear or redirect a replacement login.
+- **Unscoped sync faults.** The old fixture consumed the next authenticated request of the selected type. A fault now matches both the queued operation ID and a fingerprint of the intended authenticated session. Only the local operator can arm it, and legacy headers require a separate loopback test-runner opt-in.
 
-## 2. Mandatory Scenarios Audit & Evidence Integrity
+## Audit decisions
 
-### Scenario A: Network Interruption & Recovery
-- **Status:** **PHYSICAL PASS** (Offline-to-online recovery) / **AUTOMATED TEST PASS** (Mid-sync cancellation & socket error recovery).
-- **Evidence Links:** [`logs/auth-fix-verification.txt`](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/evidence/day18/logs/auth-fix-verification.txt), [`api/network-recovery-success.json`](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/evidence/day18/api/network-recovery-success.json), `Day18DebuggingAndMonitoringTest.kt`.
-- **Notes:** Physical device testing proved successful offline creation followed by online recovery (`auth-fix-verification.txt`). Mid-sync TCP socket disconnection recovery is fully covered by automated unit tests in `Day18DebuggingAndMonitoringTest.kt`.
+| Finding | Decision |
+| --- | --- |
+| A task could show `SYNCED` before linked photos finished | Aggregate task and photo acknowledgement and failure states. Overlay live in-flight state from the active request, leaving durable queue records available across process death. |
+| One permanent failure stopped the account queue | Retain the rejected operation and its error. Split rejected atomic task batches, continue independent work, and hold later operations for affected tasks. |
+| Task-list completion could leave work unscheduled | Schedule WorkManager for the account that successfully completed or reopened the task. |
+| The optional debug menu delayed requests before transmission | Remove the menu. Use a loopback-only, opt-in server fixture that reports receipt of the targeted authenticated sync request. |
+| Fixture values and simulated 401 leaked into shared Android code | Remove credential defaults and client-side mock 401 injection. Expire a stored session through the test backend to exercise real HTTP 401. |
 
-### Scenario B: Server Failures (HTTP 500 / 504)
-- **Status:** **AUTOMATED TEST PASS** / **NOT VERIFIED (Live Physical Device Mid-Stream)**.
-- **Evidence Links:** `Day18DebuggingAndMonitoringTest.kt` (`Scenario B - HTTP 500 and 504 server failures...`), `server.js` failure-injection middleware (`X-Mock-Fail-500`, `X-Mock-Timeout`).
-- **Notes:** Validated comprehensively via automated unit tests verifying that 5xx errors revert queue items to `PENDING` for WorkManager exponential retry and allow duplicate-free idempotent replay. Live physical device injection of 500/504 headers during active sync was not captured in raw Logcat text.
-- **Minimum OnePlus Test Procedure to Obtain Live Physical Evidence:** Start app with backend running, send request with header `X-Mock-Fail-500: true`, observe Logcat retry, remove header, observe success.
-
-### Scenario C: Session Expiry (HTTP 401 Unauthorized)
-- **Status:** **PHYSICAL PASS** (Session recovery from local mock to real backend session) / **AUTOMATED TEST PASS** (HTTP 401 response handling & token clearing).
-- **Evidence Links:** [`logs/auth-fix-verification.txt`](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/evidence/day18/logs/auth-fix-verification.txt), `Day18DebuggingAndMonitoringTest.kt` (`Scenario C - Session expiry (HTTP 401)...`), `TokenManagerImpl.handle401()`.
-- **Notes:** Physical device testing successfully demonstrated transitioning from local mock session state to authenticated backend session without losing pending Room records (`auth-fix-verification.txt`). Automated tests verify explicit HTTP 401 response handling.
-
-### Scenario D: Application Process Restart
-- **Status:** **PHYSICAL PASS** & **AUTOMATED TEST PASS**.
-- **Evidence Links:** [`logs/auth-fix-verification.txt`](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/evidence/day18/logs/auth-fix-verification.txt), `RoomDaoTest.kt`, `Day18DebuggingAndMonitoringTest.kt` (`Scenario D - App restart simulation...`).
-- **Notes:** Verified on physical OnePlus EB2101 device by force-stopping the application via `adb shell am force-stop com.example.storevisitmanagementsystem.day18`, reopening the app, confirming Room DB persistence of pending task & photo evidence, and observing successful background synchronization upon network availability.
+See [the debugging log](debugging-log.md) for inspection evidence and [the regression report](regression-results.md) for the run status and remaining device procedures.

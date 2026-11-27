@@ -8,9 +8,11 @@ import com.example.storevisitmanagementsystem.data.local.db.dao.TaskDao
 import com.example.storevisitmanagementsystem.data.local.db.entity.SyncQueueEntity
 import com.example.storevisitmanagementsystem.data.local.preferences.ITokenManager
 import com.example.storevisitmanagementsystem.data.remote.api.ApiService
+import com.example.storevisitmanagementsystem.data.remote.model.ApiResponse
 import com.example.storevisitmanagementsystem.data.remote.model.SyncBatchRequest
 import com.example.storevisitmanagementsystem.data.remote.model.SyncOperationDto
 import com.example.storevisitmanagementsystem.util.Resource
+import com.example.storevisitmanagementsystem.sync.InFlightSync
 import com.example.storevisitmanagementsystem.util.Constants
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
@@ -20,6 +22,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Response
 import android.util.Log
 import java.io.File
 import java.util.UUID
@@ -61,7 +64,7 @@ class SyncRepositoryImpl(
         val sortedOps = try {
             runInTransaction {
                 val ops = syncQueueDao.getPendingOperationsSync(userId)
-                ops.filter { it.status != "PENDING" }.forEach(::restorePending)
+                ops.filter { it.status == "SYNCING" || it.status == "FAILED" }.forEach(::restorePending)
                 ops
             }
         } catch (e: CancellationException) {
@@ -71,59 +74,117 @@ class SyncRepositoryImpl(
             return@withContext Resource.Error("Could not read the sync queue: ${e.localizedMessage}")
         }
 
-        Log.i(TAG, "Starting sync for userId=$userId with ${sortedOps.size} pending operation(s)")
+        val pendingCount = sortedOps.count { it.status != "REJECTED" }
+        Log.i(TAG, "Starting sync for userId=$userId with $pendingCount pending operation(s)")
+        try {
+            drainQueue(token, userId, sortedOps)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.e(TAG, "Could not finish the local sync queue", failure)
+            Resource.Error("Could not finish the local sync queue.")
+        }
+    }
 
+    private suspend fun drainQueue(
+        token: String,
+        userId: String,
+        sortedOps: List<SyncQueueEntity>
+    ): Resource<Int> {
         var totalProcessed = 0
-        val taskOps = mutableListOf<SyncOperationDto>()
-        val taskQueueEntities = mutableListOf<SyncQueueEntity>()
+        val taskQueue = mutableListOf<SyncQueueEntity>()
+        val blockedTasks = mutableSetOf<String>()
+
+        suspend fun flushTasks(): Resource<Int> {
+            val result = executeTaskBatch(token, userId, taskQueue, blockedTasks)
+            taskQueue.clear()
+            if (result is Resource.Success) totalProcessed += result.data ?: 0
+            return result
+        }
 
         for (op in sortedOps) {
-            if (op.entityType == "TASK") {
-                val payloadObj = try {
-                    JsonParser.parseString(op.payloadJson)
-                } catch (e: Exception) {
-                    op.payloadJson
-                }
-                taskOps.add(
-                    SyncOperationDto(
-                        operationId = op.operationId,
-                        entityType = op.entityType,
-                        entityId = op.entityId,
-                        operationType = op.operationType,
-                        userId = op.userId,
-                        payload = payloadObj,
-                        sequenceNumber = op.sequenceNumber
-                    )
-                )
-                taskQueueEntities.add(op)
-            } else if (op.entityType == "PHOTO") {
-                // If we accumulated task ops prior to this photo, execute them first to preserve dependency order
-                if (taskOps.isNotEmpty()) {
-                    val batchResult = executeTaskBatch(token, userId, taskOps, taskQueueEntities)
-                    if (batchResult is Resource.Error) return@withContext batchResult
-                    totalProcessed += (batchResult as Resource.Success).data ?: 0
-                    taskOps.clear()
-                    taskQueueEntities.clear()
-                }
+            if (op.entityType == "TASK" && op.status != "REJECTED") {
+                taskQueue.add(op)
+                continue
+            }
 
-                // Execute Photo Upload
-                val photoResult = executePhotoUpload(token, op, userId)
-                if (photoResult is Resource.Error) return@withContext Resource.Error(photoResult.message ?: "Photo upload failed")
+            val taskResult = flushTasks()
+            if (taskResult is Resource.Error) return taskResult
+
+            val taskId = parentTaskId(op)
+            if (op.status == "REJECTED") {
+                taskId?.let(blockedTasks::add)
+                continue
+            }
+            if (op.entityType != "PHOTO" || taskId in blockedTasks) continue
+
+            val photoResult = executePhotoUpload(token, op, userId)
+            if (photoResult is Resource.Error) {
+                if (!isPermanent(photoResult)) {
+                    return Resource.Error(photoResult.message ?: "Photo upload failed")
+                }
+                markPermanentFailure(op, photoResult.message.orEmpty())
+                taskId?.let(blockedTasks::add)
+            } else {
                 totalProcessed += 1
             }
         }
 
-        // Flush remaining task operations
-        if (taskOps.isNotEmpty()) {
-            val batchResult = executeTaskBatch(token, userId, taskOps, taskQueueEntities)
-            if (batchResult is Resource.Error) return@withContext batchResult
-            totalProcessed += (batchResult as Resource.Success).data ?: 0
-        }
+        val taskResult = flushTasks()
+        if (taskResult is Resource.Error) return taskResult
+        return Resource.Success(totalProcessed)
+    }
 
-        Resource.Success(totalProcessed)
+    private fun isPermanent(result: Resource.Error<*>): Boolean =
+        result.message?.startsWith("Permanent error") == true
+
+    private fun parentTaskId(op: SyncQueueEntity): String? {
+        if (op.entityType == "TASK") return op.entityId
+        return runCatching { JsonParser.parseString(op.payloadJson).asJsonObject.get("taskId")?.asString }
+            .getOrNull() ?: photoEvidenceDao.getPhotoById(op.entityId, op.userId)?.taskId
     }
 
     private suspend fun executeTaskBatch(
+        token: String,
+        userId: String,
+        queue: List<SyncQueueEntity>,
+        blockedTasks: MutableSet<String>
+    ): Resource<Int> {
+        val eligible = queue.filter { it.entityId !in blockedTasks }
+        if (eligible.isEmpty()) return Resource.Success(0)
+
+        val operations = eligible.map { op ->
+            SyncOperationDto(
+                operationId = op.operationId,
+                entityType = op.entityType,
+                entityId = op.entityId,
+                operationType = op.operationType,
+                userId = op.userId,
+                payload = runCatching<Any> { JsonParser.parseString(op.payloadJson) }.getOrElse { op.payloadJson },
+                sequenceNumber = op.sequenceNumber
+            )
+        }
+        val result = sendTaskBatch(token, userId, operations, eligible)
+        if (result !is Resource.Error || !isPermanent(result)) return result
+
+        // The server rolls back the entire batch on rejection. Split in queue order
+        // to isolate the rejected operation without acknowledging the other entries.
+        if (eligible.size == 1) {
+            val rejected = eligible.single()
+            markPermanentFailure(rejected, result.message.orEmpty())
+            blockedTasks.add(rejected.entityId)
+            return Resource.Success(0)
+        }
+
+        val middle = eligible.size / 2
+        val first = executeTaskBatch(token, userId, eligible.subList(0, middle), blockedTasks)
+        if (first is Resource.Error) return first
+        val second = executeTaskBatch(token, userId, eligible.subList(middle, eligible.size), blockedTasks)
+        if (second is Resource.Error) return second
+        return Resource.Success((first.data ?: 0) + (second.data ?: 0))
+    }
+
+    private suspend fun sendTaskBatch(
         token: String,
         userId: String,
         taskOps: List<SyncOperationDto>,
@@ -139,19 +200,19 @@ class SyncRepositoryImpl(
                 return Resource.Error("No active session for this account.")
             }
             Log.d(TAG, "Posting task batch ${batchRequest.batchId} with ${taskOps.size} operation(s)")
-            val response = apiService.syncTasks(bearer(token), batchRequest)
+            val records = queueEntities.map { InFlightSync.Record(userId, it.entityId) }.toSet()
+            val response = InFlightSync.during(records) { apiService.syncTasks(bearer(token), batchRequest) }
 
             if (response.code() == 401) {
-                Log.w(TAG, "HTTP 401 Unauthorized during task sync. Clearing session token while preserving local data.")
-                tokenManager.handle401(token)
+                val invalidated = tokenManager.handle401(token)
+                Log.w(TAG, "HTTP 401 during task sync (sessionInvalidated=$invalidated)")
                 return Resource.Error("HTTP 401 Unauthorized: Session token expired. Local data preserved.")
             }
 
             if (!response.isSuccessful || response.body()?.success != true) {
-                val errorMsg = response.body()?.error?.message ?: response.message() ?: "HTTP ${response.code()}"
+                val errorMsg = failureMessage(response)
                 if (response.code() in 400..499 && response.code() !in listOf(408, 429)) {
-                    Log.e(TAG, "Permanent client error (HTTP ${response.code()}): $errorMsg. Marking tasks failed.")
-                    markPermanentFailure(queueEntities, errorMsg)
+                    Log.e(TAG, "Permanent client error (HTTP ${response.code()}): $errorMsg.")
                     return Resource.Error("Permanent error (HTTP ${response.code()}): $errorMsg")
                 }
                 Log.w(TAG, "Server error (HTTP ${response.code()}): $errorMsg. Retrying via WorkManager.")
@@ -162,10 +223,9 @@ class SyncRepositoryImpl(
             val acknowledged = queueEntities.filter { it.operationId in succeededIds }
             runInTransaction {
                 acknowledged.forEach { syncQueueDao.deleteOperation(it.operationId) }
-                val pendingTaskIds = syncQueueDao.getPendingOperationsSync(userId)
-                    .filter { it.entityType == "TASK" }.map { it.entityId }.toSet()
-                acknowledged.forEach { op ->
-                    if (op.entityId !in pendingTaskIds) taskDao.updateTaskSyncStatus(op.entityId, "SYNCED", null)
+                val remainingByTask = syncQueueDao.getPendingOperationsSync(userId).groupBy(::parentTaskId)
+                acknowledged.map { it.entityId }.distinct().forEach { taskId ->
+                    refreshTaskStatus(userId, taskId, remainingByTask[taskId].orEmpty())
                 }
             }
             if (acknowledged.size != queueEntities.size) {
@@ -197,8 +257,7 @@ class SyncRepositoryImpl(
 
             val photoFile = File(photoEntity.localFilePath)
             if (!photoFile.exists() || photoFile.length() == 0L) {
-                Log.e(TAG, "Permanent error: Photo file missing or empty at ${photoEntity.localFilePath}")
-                markPermanentFailure(listOf(op), "Photo file missing locally: ${photoEntity.localFilePath}")
+                Log.e(TAG, "Permanent error: Photo file missing or empty")
                 return Resource.Error("Permanent error: photo file missing locally.")
             }
 
@@ -219,19 +278,23 @@ class SyncRepositoryImpl(
                 return Resource.Error("No active session for this account.")
             }
             Log.d(TAG, "Uploading photo photoId=${photoEntity.photoId}, opId=${op.operationId}, fileSizeBytes=${photoFile.length()}")
-            val response = apiService.uploadPhoto(bearer(token), opIdBody, photoIdBody, taskIdBody, filePart)
+            val response = InFlightSync.during(
+                setOf(InFlightSync.Record(userId, photoEntity.taskId)),
+                InFlightSync.Record(userId, photoEntity.photoId)
+            ) {
+                apiService.uploadPhoto(bearer(token), opIdBody, photoIdBody, taskIdBody, filePart)
+            }
 
             if (response.code() == 401) {
-                Log.w(TAG, "HTTP 401 Unauthorized during photo upload. Clearing session token while preserving local photo.")
-                tokenManager.handle401(token)
+                val invalidated = tokenManager.handle401(token)
+                Log.w(TAG, "HTTP 401 during photo upload (sessionInvalidated=$invalidated)")
                 return Resource.Error("HTTP 401 Unauthorized: Session token expired. Local photo preserved.")
             }
 
             if (!response.isSuccessful || response.body()?.success != true) {
-                val errorMsg = response.body()?.error?.message ?: response.message() ?: "HTTP ${response.code()}"
+                val errorMsg = failureMessage(response)
                 if (response.code() in 400..499 && response.code() !in listOf(408, 429)) {
                     Log.e(TAG, "Permanent error uploading photo (HTTP ${response.code()}): $errorMsg")
-                    markPermanentFailure(listOf(op), errorMsg)
                     return Resource.Error("Permanent error uploading photo (HTTP ${response.code()}): $errorMsg")
                 }
                 Log.w(TAG, "Server error uploading photo (HTTP ${response.code()}): $errorMsg")
@@ -250,8 +313,11 @@ class SyncRepositoryImpl(
             runInTransaction {
                 photoEvidenceDao.updatePhotoUploadStatus(photoEntity.photoId, "UPLOADED", remoteUrl)
                 syncQueueDao.deleteOperation(op.operationId)
+                val remaining = syncQueueDao.getPendingOperationsSync(userId)
+                    .filter { parentTaskId(it) == photoEntity.taskId }
+                refreshTaskStatus(userId, photoEntity.taskId, remaining)
             }
-            Log.i(TAG, "Photo upload succeeded: photoId=${photoEntity.photoId}, remoteUrl=$remoteUrl")
+            Log.i(TAG, "Photo upload succeeded: photoId=${photoEntity.photoId}")
             Resource.Success(Unit)
         } catch (e: CancellationException) {
             Log.d(TAG, "Photo upload cancelled")
@@ -260,6 +326,16 @@ class SyncRepositoryImpl(
             Log.w(TAG, "Network failure during photo upload: ${e.localizedMessage}")
             Resource.Error("Network failure during photo upload: ${e.localizedMessage}")
         }
+    }
+
+    private fun failureMessage(response: Response<out ApiResponse<*>>): String {
+        val serverMessage = runCatching {
+            response.errorBody()?.use { body ->
+                JsonParser.parseString(body.string()).asJsonObject.getAsJsonObject("error").get("message").asString
+            }
+        }.getOrNull()
+        return response.body()?.error?.message ?: serverMessage
+            ?: response.message().ifBlank { "HTTP ${response.code()}" }
     }
 
     private fun bearer(token: String): String = if (token.startsWith("Bearer ")) token else "Bearer $token"
@@ -280,15 +356,29 @@ class SyncRepositoryImpl(
         }
     }
 
-    private suspend fun markPermanentFailure(ops: List<SyncQueueEntity>, errorMsg: String) {
-        Log.w(TAG, "Marking ${ops.size} operation(s) as permanent failure: $errorMsg")
+    private fun refreshTaskStatus(userId: String, taskId: String, queue: List<SyncQueueEntity>) {
+        val taskOps = queue.filter { it.entityType == "TASK" }
+        val photos = photoEvidenceDao.getPhotosForTaskSync(taskId, userId)
+        val rejection = queue.firstOrNull { it.status == "REJECTED" }
+        val status = when {
+            rejection != null || photos.any { it.uploadStatus == "UPLOAD_FAILED" } -> "SYNC_FAILED"
+            taskOps.any { it.operationType == "DELETE" } -> "PENDING_DELETE"
+            taskOps.any { it.operationType == "CREATE" } -> "PENDING_INSERT"
+            queue.isNotEmpty() || photos.any { it.uploadStatus != "UPLOADED" } -> "PENDING_UPDATE"
+            else -> "SYNCED"
+        }
+        taskDao.updateTaskSyncStatus(taskId, status, rejection?.errorMessage)
+    }
+
+    private suspend fun markPermanentFailure(op: SyncQueueEntity, errorMsg: String) {
+        Log.w(TAG, "Rejecting operation ${op.operationId}: $errorMsg")
         runInTransaction {
-            for (op in ops) {
-                if (op.entityType == "TASK") {
-                    taskDao.updateTaskSyncStatus(op.entityId, "SYNC_FAILED", errorMsg)
-                } else if (op.entityType == "PHOTO") {
-                    photoEvidenceDao.updatePhotoUploadStatus(op.entityId, "UPLOAD_FAILED", null)
-                }
+            syncQueueDao.updateOperationStatus(op.operationId, "REJECTED", errorMsg)
+            if (op.entityType == "PHOTO") {
+                photoEvidenceDao.updatePhotoUploadStatus(op.entityId, "UPLOAD_FAILED", null)
+            }
+            parentTaskId(op)?.let { taskId ->
+                taskDao.updateTaskSyncStatus(taskId, "SYNC_FAILED", errorMsg)
             }
         }
     }

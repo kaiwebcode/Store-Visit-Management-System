@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.view.View
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -47,9 +46,6 @@ class LoginActivity : AppCompatActivity() {
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Show debug credentials container only in debug builds
-        binding.debugCredentialsContainer.isVisible = BuildConfig.DEBUG
-
         checkExistingSession()
         setupListeners()
         observeViewModel()
@@ -58,7 +54,7 @@ class LoginActivity : AppCompatActivity() {
     private fun checkExistingSession() {
         val tokenManager = TokenManagerImpl(applicationContext)
         val token = tokenManager.getAuthToken()
-        if (tokenManager.isLoggedIn() && token != null && !token.startsWith(Constants.LOCAL_MOCK_TOKEN_PREFIX)) {
+        if (tokenManager.isLoggedIn() && token != null && (!BuildConfig.DEBUG || !token.startsWith(Constants.LOCAL_MOCK_TOKEN_PREFIX))) {
             tokenManager.getUserId()?.let { SyncManager.scheduleSync(applicationContext, it) }
             navigateToStoreSelection()
         }

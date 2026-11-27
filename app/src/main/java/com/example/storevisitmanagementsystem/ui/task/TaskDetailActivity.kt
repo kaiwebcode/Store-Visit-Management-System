@@ -5,6 +5,10 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import com.example.storevisitmanagementsystem.sync.InFlightSync
+import com.example.storevisitmanagementsystem.sync.SyncManager
+import com.example.storevisitmanagementsystem.data.repository.PreferencesAssignedStoreCache
+import kotlinx.coroutines.flow.combine
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,7 +51,8 @@ class TaskDetailActivity : AppCompatActivity() {
     private val storeRepository by lazy {
         StoreRepositoryImpl(
             ApiClient.getApiService(applicationContext),
-            TokenManagerImpl(applicationContext)
+            TokenManagerImpl(applicationContext),
+            PreferencesAssignedStoreCache(applicationContext)
         )
     }
 
@@ -59,7 +64,9 @@ class TaskDetailActivity : AppCompatActivity() {
         val taskRepo = TaskRepositoryImpl(appDb.taskDao(), appDb)
         val imageStorageManager = ImageStorageManager(applicationContext)
         val photoRepo = PhotoRepositoryImpl(appDb.photoEvidenceDao(), appDb, imageStorageManager)
-        TaskViewModel.Factory(taskRepo, photoRepo, authRepo)
+        TaskViewModel.Factory(taskRepo, photoRepo, authRepo) { userId ->
+            SyncManager.triggerImmediateSync(applicationContext, userId)
+        }
     }
 
     /**
@@ -171,10 +178,6 @@ class TaskDetailActivity : AppCompatActivity() {
             updateTaskActions()
             when (result) {
                 is Resource.Success -> {
-                    val userId = viewModel.getActiveUserId()
-                    if (userId != null) {
-                        com.example.storevisitmanagementsystem.sync.SyncManager.triggerImmediateSync(applicationContext, userId)
-                    }
                     if (closeOnSuccess) {
                         Toast.makeText(this@TaskDetailActivity, "Task deleted", Toast.LENGTH_SHORT).show()
                         finish()
@@ -238,7 +241,7 @@ class TaskDetailActivity : AppCompatActivity() {
                                 Toast.makeText(this@TaskDetailActivity, "Photo evidence attached", Toast.LENGTH_SHORT).show()
                                 val activeUser = viewModel.getActiveUserId()
                                 if (activeUser != null) {
-                                    com.example.storevisitmanagementsystem.sync.SyncManager.triggerImmediateSync(applicationContext, activeUser)
+                                    SyncManager.triggerImmediateSync(applicationContext, activeUser)
                                 }
                                 viewModel.clearPhotoSaveResult()
                             }
@@ -267,7 +270,12 @@ class TaskDetailActivity : AppCompatActivity() {
 
                 // Observe Photo Evidence Entities
                 launch {
-                    appDb.photoEvidenceDao().getPhotosForTask(taskId, userId).collect { photos ->
+                    combine(appDb.photoEvidenceDao().getPhotosForTask(taskId, userId), InFlightSync.photos) { photos, active ->
+                        photos.map { photo ->
+                            if (InFlightSync.Record(userId, photo.photoId) in active) photo.copy(uploadStatus = "UPLOADING")
+                            else photo
+                        }
+                    }.collect { photos ->
                         photoAdapter.submitList(photos)
                         if (photos.isEmpty()) {
                             binding.tvNoPhotos.visibility = View.VISIBLE
@@ -286,6 +294,7 @@ class TaskDetailActivity : AppCompatActivity() {
         binding.tvCategoryBadge.text = task.category
         binding.tvPriorityBadge.text = task.priority
         binding.tvStatusBadge.text = task.status
+        binding.tvSyncStatus.text = "Sync: ${task.syncDisplayStatus()}"
         binding.tvCreatedAt.text = "Created: ${task.createdAt.take(19).replace('T', ' ')}"
 
         val isCompleted = task.status.uppercase() == "COMPLETED"

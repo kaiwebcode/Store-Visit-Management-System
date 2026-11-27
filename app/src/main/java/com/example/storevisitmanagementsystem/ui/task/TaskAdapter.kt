@@ -39,13 +39,7 @@ class TaskAdapter(
             binding.tvTaskDescription.text = task.description.ifBlank { "No description provided." }
             binding.tvCategoryBadge.text = task.category
             binding.tvPriorityBadge.text = task.priority
-            val syncBadgeText = when (task.syncStatus.uppercase()) {
-                "SYNCED" -> "SYNCED"
-                "SYNCING" -> "SYNCING..."
-                "SYNC_FAILED" -> "SYNC FAILED"
-                else -> "PENDING"
-            }
-            binding.tvStatusText.text = "${task.status} | $syncBadgeText"
+            binding.tvStatusText.text = "${task.status} | Sync: ${task.syncDisplayStatus()}"
             val statusColor = when (task.syncStatus.uppercase()) {
                 "SYNCED" -> Color.parseColor("#34D399") // sv_success
                 "SYNCING" -> Color.parseColor("#1685FF") // sv_accent
@@ -99,4 +93,11 @@ class TaskAdapter(
             return oldItem == newItem
         }
     }
+}
+
+internal fun TaskEntity.syncDisplayStatus(): String = when (syncStatus.uppercase()) {
+    "SYNCED" -> "SYNCED"
+    "SYNCING" -> "SYNCING"
+    "SYNC_FAILED" -> "FAILED"
+    else -> "PENDING"
 }

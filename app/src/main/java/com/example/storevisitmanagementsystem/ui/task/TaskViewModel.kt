@@ -10,6 +10,7 @@ import com.example.storevisitmanagementsystem.data.repository.IPhotoRepository
 import com.example.storevisitmanagementsystem.data.repository.ITaskRepository
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
+import com.example.storevisitmanagementsystem.sync.InFlightSync
 import com.example.storevisitmanagementsystem.util.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -21,7 +22,8 @@ import java.io.File
 class TaskViewModel(
     private val taskRepository: ITaskRepository,
     private val photoRepository: IPhotoRepository,
-    private val authRepository: IAuthRepository
+    private val authRepository: IAuthRepository,
+    private val scheduleSync: (String) -> Unit = {}
 ) : ViewModel() {
 
     private val _statusFilter = MutableStateFlow("ALL")
@@ -70,7 +72,9 @@ class TaskViewModel(
             // Reconcile orphaned temp photo files on task list initialization
             photoRepository.reconcileOrphanedPhotos(userId)
 
-            taskRepository.getTasksForStore(userId, storeId).collect { tasks ->
+            combine(taskRepository.getTasksForStore(userId, storeId), InFlightSync.tasks) { tasks, active ->
+                tasks.map { it.withLiveSyncState(active) }
+            }.collect { tasks ->
                 _allTasks.value = tasks
             }
         }
@@ -86,18 +90,29 @@ class TaskViewModel(
 
     fun observeTask(taskId: String, storeId: String): Flow<TaskEntity?>? {
         val userId = getActiveUserId() ?: return null
-        return taskRepository.getTaskById(taskId, userId, storeId)
+        return combine(taskRepository.getTaskById(taskId, userId, storeId), InFlightSync.tasks) { task, active ->
+            task?.withLiveSyncState(active)
+        }
     }
 
+    private fun TaskEntity.withLiveSyncState(active: Set<InFlightSync.Record>): TaskEntity =
+        if (InFlightSync.Record(userId, taskId) in active) copy(syncStatus = "SYNCING") else this
+
     suspend fun toggleTaskCompletion(task: TaskEntity): Resource<Unit> {
-        val userId = getActiveUserId() ?: return Resource.Error("No active user.")
+        val userId = getActiveUserId()?.takeIf { it == task.userId }
+            ?: return Resource.Error("The active account has changed.")
         val isCompleted = task.status.equals("COMPLETED", ignoreCase = true)
-        return taskRepository.toggleTaskCompletion(task.taskId, userId, task.storeId, !isCompleted)
+        return taskRepository.toggleTaskCompletion(task.taskId, userId, task.storeId, !isCompleted).also {
+            if (it is Resource.Success) scheduleSync(userId)
+        }
     }
 
     suspend fun deleteTask(task: TaskEntity): Resource<Unit> {
-        val userId = getActiveUserId() ?: return Resource.Error("No active user.")
-        return taskRepository.softDeleteTask(task.taskId, userId, task.storeId)
+        val userId = getActiveUserId()?.takeIf { it == task.userId }
+            ?: return Resource.Error("The active account has changed.")
+        return taskRepository.softDeleteTask(task.taskId, userId, task.storeId).also {
+            if (it is Resource.Success) scheduleSync(userId)
+        }
     }
 
     fun loadPhotoCount(taskId: String, onCountLoaded: (Int) -> Unit) {
@@ -116,7 +131,7 @@ class TaskViewModel(
         viewModelScope.launch {
             _photoSaveState.value = Resource.Loading()
             try {
-                val authorization = stores.validateSelectedStore(userId, storeId)
+                val authorization = stores.validateSelectedStoreLocally(userId, storeId)
                 val token = authorization.data
                 _photoSaveState.value = if (token == null) {
                     Resource.Error(authorization.message ?: "Could not verify the selected store.")
@@ -152,11 +167,12 @@ class TaskViewModel(
     class Factory(
         private val taskRepository: ITaskRepository,
         private val photoRepository: IPhotoRepository,
-        private val authRepository: IAuthRepository
+        private val authRepository: IAuthRepository,
+        private val scheduleSync: (String) -> Unit = {}
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return TaskViewModel(taskRepository, photoRepository, authRepository) as T
+            return TaskViewModel(taskRepository, photoRepository, authRepository, scheduleSync) as T
         }
     }
 }

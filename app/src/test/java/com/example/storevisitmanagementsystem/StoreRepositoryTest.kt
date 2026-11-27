@@ -7,6 +7,24 @@ import com.example.storevisitmanagementsystem.data.remote.model.LoginRequest
 import com.example.storevisitmanagementsystem.data.remote.model.LoginResponse
 import com.example.storevisitmanagementsystem.data.remote.model.StoreDto
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
+import com.example.storevisitmanagementsystem.data.repository.AssignedStoreCache
+import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
+import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
+import com.example.storevisitmanagementsystem.ui.store.StoreViewModel
+import androidx.lifecycle.viewModelScope
+import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import com.example.storevisitmanagementsystem.util.Resource
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -14,6 +32,7 @@ import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class StoreRepositoryTest {
 
     private lateinit var fakeApiService: FakeApiService
@@ -84,8 +103,137 @@ class StoreRepositoryTest {
         assertNull(fakeTokenManager.getAuthToken())
     }
 
+    @Test
+    fun cachedAssignmentSurvivesRepositoryRecreationAndCannotCrossAccounts() = runBlocking {
+        val cache = FakeStoreCache()
+        fakeTokenManager.saveSession("token123", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+        val online = StoreRepositoryImpl(fakeApiService, fakeTokenManager, cache)
+        assertEquals(2, online.getAssignedStores().data?.size)
+        online.saveSelectedStoreId("str_102")
+
+        fakeApiService.offline = true
+        val reopened = StoreRepositoryImpl(fakeApiService, fakeTokenManager, cache)
+        assertEquals("str_102", reopened.getSelectedStoreId())
+        assertEquals(listOf("str_102"), reopened.getAssignedStores("express").data?.map { it.id })
+
+        fakeTokenManager.saveSession("token456", "usr_002", "agent2", "Sarah", "FIELD_AGENT")
+        assertTrue(reopened.getAssignedStores() is Resource.Error)
+        assertTrue(reopened.validateSelectedStoreLocally("usr_002", "str_102") is Resource.Error)
+    }
+
+    @Test
+    fun offlineTaskCreationUsesCachedAuthorizationWithoutContactingStoreApi() = runBlocking {
+        val cache = FakeStoreCache()
+        val stores = StoreRepositoryImpl(fakeApiService, fakeTokenManager, cache)
+        fakeTokenManager.saveSession("token123", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+        assertTrue(stores.getAssignedStores() is Resource.Success)
+        stores.saveSelectedStoreId("str_101")
+        fakeApiService.offline = true
+        val requestsBeforeSave = fakeApiService.storeRequests
+
+        val authorization = stores.validateSelectedStoreLocally("usr_001", "str_101")
+        val token = checkNotNull(authorization.data)
+        val dao = TaskRepositoryTest.FakeTaskDao()
+        val result = TaskRepositoryImpl(dao).createTask(
+            "usr_001", "str_101", "Offline save", "", "GENERAL", "MEDIUM"
+        ) { stores.isSelectedStoreSession("usr_001", "str_101", token) }
+
+        assertTrue(result is Resource.Success)
+        assertEquals(requestsBeforeSave, fakeApiService.storeRequests)
+        assertEquals(dao.tasks.single().taskId, dao.syncOps.single().entityId)
+        assertEquals("PENDING", dao.syncOps.single().status)
+    }
+
+    @Test
+    fun authoritativeUnauthorizedResponseNeverReturnsCachedAssignment() = runBlocking {
+        val cache = FakeStoreCache()
+        val stores = StoreRepositoryImpl(fakeApiService, fakeTokenManager, cache)
+        fakeTokenManager.saveSession("token123", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+        assertTrue(stores.getAssignedStores() is Resource.Success)
+        fakeApiService.offline = true
+        assertEquals(2, stores.getAssignedStores().data?.size)
+        fakeApiService.offline = false
+        fakeTokenManager.saveSession("expired_token", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+
+        assertTrue(stores.getAssignedStores() is Resource.Error)
+        assertNull(fakeTokenManager.getAuthToken())
+        assertTrue(cache.read("usr_001").isEmpty())
+    }
+
+    @Test
+    fun workerInvalidationRequestsLoginWhileStoreRequestIsStillPending() = runTest {
+        fakeTokenManager.saveSession("expired_token", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+        val responseReady = CompletableDeferred<Unit>()
+        fakeApiService.beforeStoreResponse = { responseReady.await() }
+        withStoreViewModel { viewModel ->
+            runCurrent()
+            assertEquals(1, fakeApiService.storeRequests)
+            assertFalse(viewModel.requiresLogin.first())
+
+            // The worker uses this same matching-token invalidation entry point.
+            assertTrue(fakeTokenManager.handle401("expired_token"))
+            assertTrue(viewModel.requiresLogin.first())
+            assertTrue(viewModel.shouldNavigateToLogin())
+
+            responseReady.complete(Unit)
+            runCurrent()
+            assertEquals("Session expired. Please log in again.", viewModel.storesState.value.message)
+        }
+    }
+
+    @Test
+    fun matchingStore401RequestsLogin() = runTest {
+        fakeTokenManager.saveSession("expired_token", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+        withStoreViewModel { viewModel ->
+            runCurrent()
+            assertTrue(viewModel.requiresLogin.first())
+            assertTrue(viewModel.shouldNavigateToLogin())
+            assertNull(fakeTokenManager.getAuthToken())
+        }
+    }
+
+    @Test
+    fun delayedStore401DoesNotRequestLoginAfterSuccessfulReplacement() = runTest {
+        fakeTokenManager.saveSession("expired_token", "usr_001", "agent1", "Alex", "FIELD_AGENT")
+        val responseReady = CompletableDeferred<Unit>()
+        fakeApiService.beforeStoreResponse = { responseReady.await() }
+        withStoreViewModel { viewModel ->
+            runCurrent()
+            assertEquals(1, fakeApiService.storeRequests)
+            fakeApiService.loginResponse = LoginResponse("replacement", "usr_002", "agent2", "Sarah", "FIELD_AGENT", "")
+            val auth = AuthRepositoryImpl(fakeApiService, fakeTokenManager)
+            assertTrue(auth.login("agent2", "fixture input") is Resource.Success)
+            responseReady.complete(Unit)
+            runCurrent()
+            assertFalse(viewModel.requiresLogin.first())
+            assertFalse(viewModel.shouldNavigateToLogin())
+            assertEquals("replacement", fakeTokenManager.getAuthTokenForUser("usr_002"))
+            assertEquals("The account has changed.", viewModel.storesState.value.message)
+        }
+    }
+
+    private suspend fun TestScope.withStoreViewModel(block: suspend (StoreViewModel) -> Unit) {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val auth = AuthRepositoryImpl(fakeApiService, fakeTokenManager)
+        val viewModel = StoreViewModel(repository, auth, fakeTokenManager.sessionActive)
+        try {
+            block(viewModel)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    private class FakeStoreCache : AssignedStoreCache {
+        private val stores = mutableMapOf<String, List<StoreDto>>()
+        override fun read(userId: String): List<StoreDto> = stores[userId].orEmpty()
+        override fun write(userId: String, stores: List<StoreDto>) { this.stores[userId] = stores }
+        override fun clear(userId: String) { stores.remove(userId) }
+    }
+
     // --- Fake Test Doubles ---
     private class FakeTokenManager : ITokenManager {
+        val sessionActive = MutableStateFlow(false)
         private var token: String? = null
         private var userId: String? = null
         private var username: String? = null
@@ -99,6 +247,7 @@ class StoreRepositoryTest {
             this.username = username
             this.name = name
             this.role = role
+            sessionActive.value = true
         }
 
         override fun getAuthToken(): String? = token
@@ -113,6 +262,7 @@ class StoreRepositoryTest {
         override fun clearSessionTokenOnly() {
             this.token = null
             this.selectedStoreId = null
+            sessionActive.value = false
         }
 
         override fun handle401(requestToken: String?): Boolean {
@@ -125,13 +275,17 @@ class StoreRepositoryTest {
     }
 
     private class FakeApiService : ApiService {
+        var offline = false
+        var storeRequests = 0
+        var beforeStoreResponse: suspend () -> Unit = {}
+        var loginResponse: LoginResponse? = null
         private val storesList = listOf(
             StoreDto("str_101", "STR-NY-001", "Downtown Megastore", "123 Main St, New York, NY", "SUPERMARKET", "usr_001"),
             StoreDto("str_102", "STR-NY-002", "Metro Express Mart", "456 Broadway Ave, New York, NY", "CONVENIENCE", "usr_001")
         )
 
         override suspend fun login(request: LoginRequest): Response<ApiResponse<LoginResponse>> {
-            return Response.success(ApiResponse(success = true, data = null))
+            return Response.success(ApiResponse(success = true, data = loginResponse))
         }
 
         override suspend fun logout(token: String): Response<ApiResponse<Map<String, String>>> {
@@ -139,6 +293,9 @@ class StoreRepositoryTest {
         }
 
         override suspend fun getAssignedStores(token: String, query: String?): Response<ApiResponse<List<StoreDto>>> {
+            storeRequests++
+            beforeStoreResponse()
+            if (offline) throw IOException("Offline")
             if (token.contains("expired_token")) {
                 return Response.error(401, okhttp3.ResponseBody.create(null, "Unauthorized"))
             }

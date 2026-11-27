@@ -48,12 +48,14 @@ class PhotoAdapter(
 
             val statusText = when (photo.uploadStatus.uppercase()) {
                 "UPLOADED" -> "SYNCED"
+                "UPLOADING" -> "SYNCING"
                 "UPLOAD_FAILED" -> "FAILED"
                 else -> "PENDING"
             }
             binding.tvUploadStatus.text = statusText
             val statusColor = when (photo.uploadStatus.uppercase()) {
                 "UPLOADED" -> Color.parseColor("#34D399") // sv_success green
+                "UPLOADING" -> Color.parseColor("#1685FF")
                 "UPLOAD_FAILED" -> Color.parseColor("#F87171") // error red
                 else -> Color.parseColor("#FBBF24") // pending amber
             }

@@ -18,6 +18,7 @@ import com.example.storevisitmanagementsystem.data.repository.PhotoRepositoryImp
 import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityTaskListBinding
 import com.example.storevisitmanagementsystem.util.Constants
+import com.example.storevisitmanagementsystem.sync.SyncManager
 import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
 import com.example.storevisitmanagementsystem.util.Resource
@@ -40,7 +41,9 @@ class TaskListActivity : AppCompatActivity() {
         val taskRepo = TaskRepositoryImpl(appDb.taskDao(), appDb)
         val imageStorageManager = ImageStorageManager(applicationContext)
         val photoRepo = PhotoRepositoryImpl(appDb.photoEvidenceDao(), appDb, imageStorageManager)
-        TaskViewModel.Factory(taskRepo, photoRepo, authRepo)
+        TaskViewModel.Factory(taskRepo, photoRepo, authRepo) { userId ->
+            SyncManager.triggerImmediateSync(applicationContext, userId)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +62,7 @@ class TaskListActivity : AppCompatActivity() {
         listUserId = viewModel.getActiveUserId()
         listUserId?.let { userId ->
             viewModel.observeTasksForStore(storeId)
-            com.example.storevisitmanagementsystem.sync.SyncManager.scheduleSync(applicationContext, userId)
+            SyncManager.scheduleSync(applicationContext, userId)
         }
     }
 

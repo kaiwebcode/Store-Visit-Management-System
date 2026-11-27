@@ -312,9 +312,10 @@ class SyncRepositoryTest {
         val jpeg = queuePhoto("first", 1)
         assertTrue(jpeg.delete())
 
-        assertTrue(syncRepository.syncPendingOperations("usr_001") is Resource.Error)
+        assertEquals(0, syncRepository.syncPendingOperations("usr_001").data)
         assertEquals(0, fakeApiService.photoRequests)
         assertEquals("op_photo", fakeSyncQueueDao.ops.single().operationId)
+        assertEquals("REJECTED", fakeSyncQueueDao.ops.single().status)
         assertEquals("UPLOAD_FAILED", fakePhotoDao.photos.single().uploadStatus)
     }
 
@@ -357,7 +358,7 @@ class SyncRepositoryTest {
         val ops = mutableListOf<SyncQueueEntity>()
 
         override fun getPendingOperations(userId: String): Flow<List<SyncQueueEntity>> = flowOf(ops.filter { it.userId == userId && it.status == "PENDING" })
-        override fun getPendingOperationsSync(userId: String): List<SyncQueueEntity> = ops.filter { it.userId == userId && it.status in setOf("PENDING", "SYNCING", "FAILED") }.sortedBy { it.sequenceNumber }
+        override fun getPendingOperationsSync(userId: String): List<SyncQueueEntity> = ops.filter { it.userId == userId && it.status in setOf("PENDING", "SYNCING", "FAILED", "REJECTED") }.sortedBy { it.sequenceNumber }
         override fun getMaxSequenceNumber(): Long? = ops.maxOfOrNull { it.sequenceNumber }
         override fun insertOperation(operation: SyncQueueEntity) { ops.removeAll { it.operationId == operation.operationId }; ops.add(operation) }
         override fun updateOperationStatus(operationId: String, status: String, errorMessage: String?) {
@@ -386,7 +387,8 @@ class SyncRepositoryTest {
     private class FakePhotoEvidenceDao : PhotoEvidenceDao {
         val photos = mutableListOf<PhotoEvidenceEntity>()
         override fun getPhotosForTask(taskId: String, userId: String): Flow<List<PhotoEvidenceEntity>> = flowOf(photos)
-        override fun getPhotosForTaskSync(taskId: String, userId: String): List<PhotoEvidenceEntity> = photos
+        override fun getPhotosForTaskSync(taskId: String, userId: String): List<PhotoEvidenceEntity> =
+            photos.filter { it.taskId == taskId && it.userId == userId }
         override fun getPhotoById(photoId: String, userId: String): PhotoEvidenceEntity? = photos.find { it.photoId == photoId }
         override fun getAllLocalPhotoFilePaths(): List<String> = photos.map { it.localFilePath }
         override fun insertPhoto(photo: PhotoEvidenceEntity) { photos.add(photo) }
