@@ -15,4 +15,5 @@ object Constants {
     const val EXTRA_TASK_ID = "extra_task_id"
     const val EXTRA_STORE_ID = "extra_store_id"
     const val EXTRA_STORE_NAME = "extra_store_name"
+
 }

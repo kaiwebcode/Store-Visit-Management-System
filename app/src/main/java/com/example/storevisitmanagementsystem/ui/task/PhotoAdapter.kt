@@ -1,5 +1,6 @@
 package com.example.storevisitmanagementsystem.ui.task
 
+import android.graphics.Color
 import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -45,7 +46,20 @@ class PhotoAdapter(
                 binding.ivPhotoThumbnail.setImageResource(R.drawable.ic_photo)
             }
 
-            binding.tvUploadStatus.text = if (photo.uploadStatus == "UPLOADED") "SYNCED" else "LOCAL"
+            val statusText = when (photo.uploadStatus.uppercase()) {
+                "UPLOADED" -> "SYNCED"
+                "UPLOADING" -> "SYNCING"
+                "UPLOAD_FAILED" -> "FAILED"
+                else -> "PENDING"
+            }
+            binding.tvUploadStatus.text = statusText
+            val statusColor = when (photo.uploadStatus.uppercase()) {
+                "UPLOADED" -> Color.parseColor("#34D399") // sv_success green
+                "UPLOADING" -> Color.parseColor("#1685FF")
+                "UPLOAD_FAILED" -> Color.parseColor("#F87171") // error red
+                else -> Color.parseColor("#FBBF24") // pending amber
+            }
+            binding.tvUploadStatus.setTextColor(statusColor)
 
             binding.root.setOnClickListener {
                 onPhotoClick(photo)

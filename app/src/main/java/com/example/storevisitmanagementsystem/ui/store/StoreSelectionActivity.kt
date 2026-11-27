@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
@@ -15,6 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.storevisitmanagementsystem.data.local.preferences.TokenManagerImpl
 import com.example.storevisitmanagementsystem.data.remote.api.ApiClient
 import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
+import com.example.storevisitmanagementsystem.data.repository.PreferencesAssignedStoreCache
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
 import com.example.storevisitmanagementsystem.databinding.ActivityStoreSelectionBinding
 import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
@@ -27,13 +27,14 @@ class StoreSelectionActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityStoreSelectionBinding
     private lateinit var storeAdapter: StoreAdapter
+    private var navigatingToLogin = false
 
     private val viewModel: StoreViewModel by viewModels {
         val tokenManager = TokenManagerImpl(applicationContext)
         val apiService = ApiClient.getApiService(applicationContext)
-        val storeRepo = StoreRepositoryImpl(apiService, tokenManager)
+        val storeRepo = StoreRepositoryImpl(apiService, tokenManager, PreferencesAssignedStoreCache(applicationContext))
         val authRepo = AuthRepositoryImpl(apiService, tokenManager)
-        StoreViewModel.Factory(storeRepo, authRepo)
+        StoreViewModel.Factory(storeRepo, authRepo, tokenManager.observeSessionActive())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,11 +110,6 @@ class StoreSelectionActivity : AppCompatActivity() {
                                 binding.tvError.text = resource.message
                                 binding.tvError.visibility = View.VISIBLE
                                 binding.tvEmpty.visibility = View.GONE
-
-                                // If session expired, navigate to Login
-                                if (resource.message?.contains("Session expired") == true) {
-                                    navigateToLogin()
-                                }
                             }
                         }
                     }
@@ -132,10 +128,8 @@ class StoreSelectionActivity : AppCompatActivity() {
                 }
 
                 launch {
-                    viewModel.loggedOut.collect { loggedOut ->
-                        if (loggedOut) {
-                            navigateToLogin()
-                        }
+                    viewModel.requiresLogin.collect { required ->
+                        if (required) navigateToLogin()
                     }
                 }
             }
@@ -151,6 +145,8 @@ class StoreSelectionActivity : AppCompatActivity() {
     }
 
     private fun navigateToLogin() {
+        if (navigatingToLogin || !viewModel.shouldNavigateToLogin()) return
+        navigatingToLogin = true
         val intent = Intent(this, LoginActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         startActivity(intent)

@@ -16,6 +16,8 @@ import com.example.storevisitmanagementsystem.ui.task.TaskDetailActivity
 import com.example.storevisitmanagementsystem.ui.task.TaskViewModel
 import com.example.storevisitmanagementsystem.util.Constants
 import com.example.storevisitmanagementsystem.data.repository.PhotoRepositoryImpl
+import com.example.storevisitmanagementsystem.data.repository.PreferencesAssignedStoreCache
+import com.example.storevisitmanagementsystem.data.remote.model.StoreDto
 import com.example.storevisitmanagementsystem.util.ImageStorageManager
 import com.example.storevisitmanagementsystem.util.Resource
 import com.google.gson.Gson
@@ -292,10 +294,52 @@ class RoomDaoTest {
     }
 
     @Test
+    fun persistedStoreCacheSurvivesRecreationAndIsScopedByAccount() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val userId = "store_cache_test_${UUID.randomUUID()}"
+        val assigned = StoreDto("store_cache", "Test code", "Test store", "Test address", "GENERAL", userId)
+        val cache = PreferencesAssignedStoreCache(context)
+        try {
+            cache.write(userId, listOf(assigned))
+            val reopened = PreferencesAssignedStoreCache(context)
+            assertEquals(listOf(assigned), reopened.read(userId))
+            assertTrue(reopened.read("${userId}_other").isEmpty())
+        } finally {
+            cache.clear(userId)
+        }
+    }
+
+    @Test
+    fun legacySyncedTaskReflectsLinkedPhotoStateInRoomFlows() = runBlocking {
+        val repository = TaskRepositoryImpl(db.taskDao(), db)
+        val userId = "usr_001"
+        val storeId = "str_101"
+        val task = checkNotNull(repository.createTask(userId, storeId, "Legacy task", "", "GENERAL", "MEDIUM").data)
+        withContext(Dispatchers.IO) {
+            db.taskDao().updateTaskSyncStatus(task.taskId, "SYNCED", null)
+            db.photoEvidenceDao().insertPhoto(
+                PhotoEvidenceEntity(
+                    photoId = "old_photo", taskId = task.taskId, userId = userId,
+                    localFilePath = "/test/old_photo.jpg", fileSizeBytes = 4,
+                    uploadStatus = "PENDING_UPLOAD", createdAt = "2026-11-25T10:00:00Z"
+                )
+            )
+        }
+        assertEquals("PENDING_UPDATE", repository.getTasksForStore(userId, storeId).first().single().syncStatus)
+        withContext(Dispatchers.IO) {
+            db.photoEvidenceDao().updatePhotoUploadStatus("old_photo", "UPLOAD_FAILED", null)
+        }
+        assertEquals("SYNC_FAILED", repository.getTaskById(task.taskId, userId, storeId).first()?.syncStatus)
+    }
+
+    @Test
     fun testMigration1To2PreservesPendingQueueOrder() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val dbName = "migration_test_${UUID.randomUUID()}.db"
+        val existingPhoto = File.createTempFile("migration-photo", ".jpg", context.cacheDir)
+        val photoBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte())
+        existingPhoto.writeBytes(photoBytes)
         val schemaPath = "${AppDatabase::class.java.name}/1.json"
         val schema = instrumentation.context.assets.open(schemaPath).bufferedReader().use {
             org.json.JSONObject(it.readText()).getJSONObject("database")
@@ -316,7 +360,10 @@ class RoomDaoTest {
                 val setup = schema.getJSONArray("setupQueries")
                 for (index in 0 until setup.length()) v1.execSQL(setup.getString(index))
                 v1.execSQL("INSERT INTO tasks VALUES ('tsk_001', 'str_101', 'usr_001', 'Offline task', '', 'GENERAL', 'MEDIUM', 'PENDING', NULL, '2026-11-25T10:00:00Z', '2026-11-25T10:00:00Z', 'PENDING_INSERT', NULL, 0)")
-                v1.execSQL("INSERT INTO photo_evidence VALUES ('pho_001', 'tsk_001', 'usr_001', '/private/photo.jpg', NULL, 1024, 'image/jpeg', 'PENDING_UPLOAD', '2026-11-25T10:00:00Z')")
+                v1.execSQL(
+                    "INSERT INTO photo_evidence VALUES ('pho_001', 'tsk_001', 'usr_001', ?, NULL, ?, 'PENDING_UPLOAD', '2026-11-25T10:00:00Z')",
+                    arrayOf<Any>(existingPhoto.absolutePath, existingPhoto.length())
+                )
                 v1.execSQL("INSERT INTO sync_queue VALUES ('op_009', 'TASK', 'tsk_001', 'CREATE', 'usr_001', '{}', 0, 'PENDING', NULL, '2026-11-25T10:00:00Z')")
                 v1.execSQL("INSERT INTO sync_queue VALUES ('op_002', 'PHOTO', 'pho_001', 'UPLOAD_PHOTO', 'usr_001', '{}', 0, 'PENDING', NULL, '2026-11-25T10:00:00Z')")
                 v1.version = schema.getInt("version")
@@ -331,12 +378,15 @@ class RoomDaoTest {
                 assertEquals(listOf("op_009", "op_002"), pending.map { it.operationId })
                 assertEquals(listOf(1L, 2L), pending.map { it.sequenceNumber })
                 assertEquals("Offline task", migrated.taskDao().getTaskByIdSync("tsk_001", "usr_001", "str_101")?.title)
-                assertEquals("/private/photo.jpg", migrated.photoEvidenceDao().getPhotoById("pho_001", "usr_001")?.localFilePath)
+                val photoPath = checkNotNull(migrated.photoEvidenceDao().getPhotoById("pho_001", "usr_001")).localFilePath
+                assertEquals(existingPhoto.absolutePath, photoPath)
+                assertArrayEquals(photoBytes, File(photoPath).readBytes())
             } finally {
                 migrated.close()
             }
         } finally {
             context.deleteDatabase(dbName)
+            existingPhoto.delete()
         }
     }
 }

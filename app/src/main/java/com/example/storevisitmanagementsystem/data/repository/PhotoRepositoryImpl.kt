@@ -78,7 +78,9 @@ class PhotoRepositoryImpl(
             )
             runInTransaction {
                 check(isSessionCurrent()) { "The session or selected store has changed." }
-                check(findActiveTask(taskId, userId, storeId) != null) { "Task is unavailable for this account and store." }
+                val task = checkNotNull(findActiveTask(taskId, userId, storeId)) {
+                    "Task is unavailable for this account and store."
+                }
                 val nextSeq = (appDatabase?.syncQueueDao()?.getMaxSequenceNumber() ?: 0L) + 1L
                 val syncOp = SyncQueueEntity(
                     operationId = "op_${UUID.randomUUID().toString().take(12)}",
@@ -93,6 +95,9 @@ class PhotoRepositoryImpl(
                 )
                 photoDao.insertPhoto(photo)
                 photoDao.insertSyncQueue(syncOp)
+                if (task.syncStatus == "SYNCED") {
+                    appDatabase?.taskDao()?.updateTaskSyncStatus(taskId, "PENDING_UPDATE", null)
+                }
             }
             persisted = true
             Resource.Success(photo)

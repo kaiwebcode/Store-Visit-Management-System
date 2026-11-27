@@ -13,6 +13,7 @@ import com.example.storevisitmanagementsystem.data.repository.AuthRepositoryImpl
 import com.example.storevisitmanagementsystem.data.repository.PhotoRepositoryImpl
 import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
 import com.example.storevisitmanagementsystem.data.repository.StoreRepositoryImpl
+import com.example.storevisitmanagementsystem.data.repository.PreferencesAssignedStoreCache
 import com.example.storevisitmanagementsystem.databinding.ActivityTaskCreateEditBinding
 import com.example.storevisitmanagementsystem.ui.auth.LoginActivity
 import com.example.storevisitmanagementsystem.util.Constants
@@ -32,7 +33,8 @@ class TaskCreateEditActivity : AppCompatActivity() {
     private val storeRepository by lazy {
         StoreRepositoryImpl(
             ApiClient.getApiService(applicationContext),
-            TokenManagerImpl(applicationContext)
+            TokenManagerImpl(applicationContext),
+            PreferencesAssignedStoreCache(applicationContext)
         )
     }
 
@@ -170,7 +172,7 @@ class TaskCreateEditActivity : AppCompatActivity() {
                         priority = priority
                     )
                     else -> {
-                        val authorization = storeRepository.validateSelectedStore(userId, storeId)
+                        val authorization = storeRepository.validateSelectedStoreLocally(userId, storeId)
                         val token = authorization.data
                         if (token == null) {
                             Resource.Error(authorization.message ?: "Could not verify the selected store.")

@@ -139,6 +139,14 @@
 
                     </LinearLayout>
 
+                    <TextView
+                        android:id="@+id/tvSyncStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="@color/sv_muted"
+                        tools:text="Sync: PENDING" />
+
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"

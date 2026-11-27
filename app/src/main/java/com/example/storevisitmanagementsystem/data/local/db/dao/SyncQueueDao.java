@@ -14,7 +14,8 @@ public interface SyncQueueDao {
     @Query("SELECT * FROM sync_queue WHERE user_id = :userId AND status = 'PENDING' ORDER BY sequence_number ASC, created_at ASC")
     Flow<List<SyncQueueEntity>> getPendingOperations(String userId);
 
-    @Query("SELECT * FROM sync_queue WHERE user_id = :userId AND status IN ('PENDING', 'SYNCING', 'FAILED') ORDER BY sequence_number ASC, created_at ASC, operation_id ASC")
+    // Include rejected rows so later dependent work can detect the durable rejection.
+    @Query("SELECT * FROM sync_queue WHERE user_id = :userId AND status IN ('PENDING', 'SYNCING', 'FAILED', 'REJECTED') ORDER BY sequence_number ASC, created_at ASC, operation_id ASC")
     List<SyncQueueEntity> getPendingOperationsSync(String userId);
 
     @Query("SELECT MAX(sequence_number) FROM sync_queue")

@@ -3,6 +3,17 @@ package com.example.storevisitmanagementsystem
 import com.example.storevisitmanagementsystem.data.local.db.dao.TaskDao
 import com.example.storevisitmanagementsystem.data.local.db.entity.SyncQueueEntity
 import com.example.storevisitmanagementsystem.data.local.db.entity.TaskEntity
+import com.example.storevisitmanagementsystem.data.repository.IAuthRepository
+import com.example.storevisitmanagementsystem.data.repository.IPhotoRepository
+import com.example.storevisitmanagementsystem.ui.task.TaskViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import java.io.File
 import com.example.storevisitmanagementsystem.data.repository.TaskRepositoryImpl
 import com.example.storevisitmanagementsystem.util.Resource
 import com.google.gson.Gson
@@ -151,7 +162,48 @@ class TaskRepositoryTest {
         assertEquals(1, fakeTaskDao.syncOps.size)
     }
 
-    private class FakeTaskDao : TaskDao {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun completionAndReopeningScheduleOnlyTheMatchingAccount() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var activeUser = "usr_001"
+        val auth = object : IAuthRepository {
+            override suspend fun login(username: String, pass: String) = error("Not used")
+            override suspend fun logout() = error("Not used")
+            override fun isLoggedIn() = true
+            override fun getActiveUserId() = activeUser
+            override fun getActiveUserName() = activeUser
+        }
+        val photo = object : IPhotoRepository {
+            override fun getPhotosForTask(taskId: String, userId: String) = error("Not used")
+            override fun createTempCaptureFile(userId: String) = error("Not used")
+            override suspend fun processAndSavePhoto(
+                tempFile: File,
+                taskId: String,
+                userId: String,
+                storeId: String,
+                isSessionCurrent: () -> Boolean
+            ) = error("Not used")
+            override suspend fun reconcileOrphanedPhotos(userId: String) = Unit
+        }
+        val scheduled = mutableListOf<String>()
+        val viewModel = TaskViewModel(repository, photo, auth) { scheduled.add(it) }
+        try {
+            repository.createTask("usr_001", "str_101", "List action", "", "GENERAL", "MEDIUM")
+            assertTrue(viewModel.toggleTaskCompletion(fakeTaskDao.tasks.single()) is Resource.Success)
+            assertEquals("COMPLETED", fakeTaskDao.tasks.single().status)
+            assertTrue(viewModel.toggleTaskCompletion(fakeTaskDao.tasks.single()) is Resource.Success)
+            assertEquals("PENDING", fakeTaskDao.tasks.single().status)
+            activeUser = "usr_002"
+            assertTrue(viewModel.toggleTaskCompletion(fakeTaskDao.tasks.single()) is Resource.Error)
+            assertEquals(listOf("usr_001", "usr_001"), scheduled)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    internal class FakeTaskDao : TaskDao {
         val tasks = mutableListOf<TaskEntity>()
         val syncOps = mutableListOf<SyncQueueEntity>()
 
