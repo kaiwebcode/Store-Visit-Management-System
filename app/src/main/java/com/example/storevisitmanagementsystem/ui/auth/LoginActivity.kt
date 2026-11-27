@@ -57,7 +57,8 @@ class LoginActivity : AppCompatActivity() {
 
     private fun checkExistingSession() {
         val tokenManager = TokenManagerImpl(applicationContext)
-        if (tokenManager.isLoggedIn()) {
+        val token = tokenManager.getAuthToken()
+        if (tokenManager.isLoggedIn() && token != null && !token.startsWith(Constants.LOCAL_MOCK_TOKEN_PREFIX)) {
             tokenManager.getUserId()?.let { SyncManager.scheduleSync(applicationContext, it) }
             navigateToStoreSelection()
         }

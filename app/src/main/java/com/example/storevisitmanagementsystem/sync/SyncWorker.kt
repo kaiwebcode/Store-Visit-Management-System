@@ -40,9 +40,11 @@ class SyncWorker(
             appDatabase = appDb
         )
 
+        Log.i(TAG, "SyncWorker run started (id=$id, userId=$userId, attempt=${runAttemptCount + 1})")
+
         return when (val result = syncRepository.syncPendingOperations(userId)) {
             is Resource.Success -> {
-                Log.i(TAG, "Work $id acknowledged ${result.data ?: 0} operations")
+                Log.i(TAG, "SyncWorker $id succeeded: acknowledged ${result.data ?: 0} operation(s)")
                 Result.success()
             }
             is Resource.Error -> {
@@ -50,15 +52,15 @@ class SyncWorker(
                 when {
                     msg.startsWith("HTTP 401") || msg.startsWith("No active session") ||
                         msg.startsWith("Local-only session") -> {
-                        Log.i(TAG, "Work $id paused for backend sign-in")
+                        Log.i(TAG, "SyncWorker $id paused waiting for backend sign-in: $msg")
                         Result.success()
                     }
                     msg.startsWith("Permanent error") -> {
-                        Log.w(TAG, "Work $id paused after a request rejection")
+                        Log.w(TAG, "SyncWorker $id paused due to permanent request rejection: $msg")
                         Result.success()
                     }
                     else -> {
-                        Log.i(TAG, "Work $id will retry after attempt ${runAttemptCount + 1}")
+                        Log.w(TAG, "SyncWorker $id transient failure: $msg. Scheduling exponential backoff retry (attempt ${runAttemptCount + 1}).")
                         Result.retry()
                     }
                 }

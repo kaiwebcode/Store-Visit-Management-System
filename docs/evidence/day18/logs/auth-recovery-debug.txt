@@ -1,0 +1,4 @@
+﻿--------- beginning of main
+11-27 14:31:54.583 18708 18856 I StoreVisitSync: SyncWorker run started (id=3195c0bc-ac31-4078-bbe3-4e66f8b51304, userId=usr_001, attempt=1)
+11-27 14:31:54.585 18708 18858 D StoreVisitSync: Sync skipped: Local-only mock session for userId=usr_001
+11-27 14:31:54.585 18708 18856 I StoreVisitSync: SyncWorker 3195c0bc-ac31-4078-bbe3-4e66f8b51304 paused waiting for backend sign-in: Local-only session. Backend sign-in required.

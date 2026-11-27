@@ -64,8 +64,11 @@ class MockApiInterceptor(context: Context) : Interceptor {
                     path.endsWith("/auth/login") -> {
                         val response = try {
                             chain.proceed(backendRequest)
-                        } catch (_: IOException) {
-                            // The standalone Day 15 mock still supports local sign-in.
+                        } catch (e: IOException) {
+                            if (getBackendHost().isNotBlank()) {
+                                throw e
+                            }
+                            // The standalone Day 15 mock still supports local sign-in if host is blank.
                             return handleLogin(request, responseBuilder)
                         }
                         try {
@@ -86,7 +89,7 @@ class MockApiInterceptor(context: Context) : Interceptor {
                         extractBearerToken(request)?.let(dbHelper::revokeToken)
                         return chain.proceed(backendRequest)
                     }
-                    path.endsWith("/tasks/sync") || path.endsWith("/photos/upload") ->
+                    path.endsWith("/stores/assigned") || path.endsWith("/tasks/sync") || path.endsWith("/photos/upload") ->
                         return chain.proceed(backendRequest)
                 }
             }

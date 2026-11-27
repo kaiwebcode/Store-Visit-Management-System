@@ -1,0 +1,7 @@
+--------- beginning of main
+11-27 12:57:01.473  5782  5869 I StoreVisitSync: SyncWorker run started (id=dc4ce982-a39b-4008-a24f-368fa15b8231, userId=usr_001, attempt=1)
+11-27 12:57:01.475  5782  5869 D StoreVisitSync: Sync skipped: Local-only mock session for userId=usr_001
+11-27 12:57:01.476  5782  5870 I StoreVisitSync: SyncWorker dc4ce982-a39b-4008-a24f-368fa15b8231 paused waiting for backend sign-in: Local-only session. Backend sign-in required.
+11-27 12:57:03.627  5782  5868 I StoreVisitSync: SyncWorker run started (id=26de0a59-af44-4f45-870d-392a18c19ad1, userId=usr_001, attempt=1)
+11-27 12:57:03.639  5782  5868 D StoreVisitSync: Sync skipped: Local-only mock session for userId=usr_001
+11-27 12:57:03.639  5782  5868 I StoreVisitSync: SyncWorker 26de0a59-af44-4f45-870d-392a18c19ad1 paused waiting for backend sign-in: Local-only session. Backend sign-in required.

@@ -2,11 +2,13 @@ package com.example.storevisitmanagementsystem.data.local.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import com.example.storevisitmanagementsystem.util.Constants
 
 class TokenManagerImpl(context: Context) : ITokenManager {
 
     private companion object {
+        private const val TAG = "StoreVisitSync"
         val sessionLock = Any()
     }
 
@@ -76,6 +78,7 @@ class TokenManagerImpl(context: Context) : ITokenManager {
      * CRITICAL REQUIREMENT: This NEVER deletes unsynchronized tasks or photo evidence files!
      */
     override fun clearSessionTokenOnly() = synchronized(sessionLock) {
+        Log.w(TAG, "Clearing session token (local queued tasks and photos preserved)")
         prefs.edit()
             .remove(Constants.KEY_AUTH_TOKEN)
             .remove(Constants.KEY_SELECTED_STORE_ID)
@@ -87,7 +90,11 @@ class TokenManagerImpl(context: Context) : ITokenManager {
      * Only invalidates session if requestToken matches activeToken.
      */
     override fun handle401(requestToken: String?): Boolean = synchronized(sessionLock) {
-        if (requestToken == null || requestToken != getAuthToken()) return@synchronized false
+        if (requestToken == null || requestToken != getAuthToken()) {
+            Log.d(TAG, "Ignored stale HTTP 401 response for non-matching token")
+            return@synchronized false
+        }
+        Log.w(TAG, "Handling HTTP 401: Active session token invalidated. Local queued data remains safe.")
         clearSessionTokenOnly()
         true
     }
