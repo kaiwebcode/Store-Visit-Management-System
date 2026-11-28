@@ -1,0 +1,22 @@
+{
+    "Test":  "Day 19 offline process restart and recovery",
+    "TaskTitle":  "DAY19-RESTART-TEST",
+    "VerifiedTaskCount":  1,
+    "VerifiedPhotoCount":  1,
+    "VerifiedAt":  "2026-11-28T14:25:50.9591377+05:30",
+    "Tasks":  [
+                  {
+                      "task_id":  "tsk_fc85f398-b39",
+                      "title":  "DAY19-RESTART-TEST",
+                      "status":  "PENDING",
+                      "is_deleted":  0
+                  }
+              ],
+    "Photos":  [
+                   {
+                       "photo_id":  "pho_a1db6a7f-f91",
+                       "task_id":  "tsk_fc85f398-b39",
+                       "remote_url":  "http://192.168.1.102:3000/v1/uploads/pho_a1db6a7f-f91.jpg"
+                   }
+               ]
+}

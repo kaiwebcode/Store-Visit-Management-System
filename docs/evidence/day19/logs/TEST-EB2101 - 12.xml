@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="11" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-11-28T07:21:40" hostname="localhost">
+  <testsuite name="com.example.storevisitmanagementsystem.ExampleInstrumentedTest" tests="1" failures="0" errors="0" skipped="0" time="0.003" timestamp="2026-11-28T07:21:40" hostname="localhost">
+    <properties>
+      <property name="device" value="adb-13f6f5c0-EgDxpR._adb-tls-connect._tcp" />
+    </properties>
+    <testcase name="useAppContext" classname="com.example.storevisitmanagementsystem.ExampleInstrumentedTest" time="0.003" />
+  </testsuite>
+  <testsuite name="com.example.storevisitmanagementsystem.RoomDaoTest" tests="9" failures="0" errors="0" skipped="0" time="1.372" timestamp="2026-11-28T07:21:40" hostname="localhost">
+    <properties>
+      <property name="device" value="adb-13f6f5c0-EgDxpR._adb-tls-connect._tcp" />
+    </properties>
+    <testcase name="photoPersistenceChecksScopeAndRemovesJpegsOnRollback" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.394" />
+    <testcase name="taskMutationsFromMainThreadUpdateActiveQueriesAndQueue" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.361" />
+    <testcase name="persistedStoreCacheSurvivesRecreationAndIsScopedByAccount" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.024" />
+    <testcase name="insertPhotoWithSyncOpAndQueryByTask" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.055" />
+    <testcase name="offlineTaskOpensFromPersistedListAfterRecreatingDatabaseAndDetailLookup" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.192" />
+    <testcase name="testMigration1To2PreservesPendingQueueOrder" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.084" />
+    <testcase name="failedQueueWriteRollsBackCompletion" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.126" />
+    <testcase name="legacySyncedTaskReflectsLinkedPhotoStateInRoomFlows" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.117" />
+    <testcase name="cleanupKeepsActiveAndRecentCapturesAndFinalPhotos" classname="com.example.storevisitmanagementsystem.RoomDaoTest" time="0.019" />
+  </testsuite>
+  <testsuite name="com.example.storevisitmanagementsystem.SyncSchedulingTest" tests="1" failures="0" errors="0" skipped="0" time="0.426" timestamp="2026-11-28T07:21:40" hostname="localhost">
+    <properties>
+      <property name="device" value="adb-13f6f5c0-EgDxpR._adb-tls-connect._tcp" />
+    </properties>
+    <testcase name="newMutationAppendsWithoutCancellingRunningWork" classname="com.example.storevisitmanagementsystem.SyncSchedulingTest" time="0.426" />
+  </testsuite>
+</testsuites>

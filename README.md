@@ -1,16 +1,18 @@
 # Store Visit Management System
-**Package:** `com.example.storevisitmanagementsystem`  
-**Git Branch:** `feature/day15-core`  
-**Milestone:** Week 4, Day 15 (Monday) Complete
+**Package:** `com.example.storevisitmanagementsystem`
+**Git Branch:** `feature/day19-testing-release`
+**Milestone:** Week 4, Day 19 bootcamp demo
 
 ---
 
 ## 1. Executive Summary
-The Store Visit Management System is an offline-first Android application designed for field agents conducting retail store audits. The Day 15 milestone delivers:
-1. **Authentication & Session Safety:** Login, logout, session persistence, account-scoped data isolation, and delayed 401 handling.
-2. **Assigned Store Management:** Fetching, searching (by store name, code, address), selecting active store context, displaying detailed store metadata, and enforcing account store authorization.
-3. **In-Process SQLite-Backed Mock API:** An OkHttp interceptor (`MockApiInterceptor`) backed by an Android SQLite database (`mock_server.db` via `SQLiteOpenHelper`) storing synthetic user credentials, sessions, and assigned store records across app process restarts. *(Note: A separate standalone HTTP service process is future work).*
-4. **Architecture Specifications:** Complete design documents (`REQUIREMENTS.md`, `DEVELOPMENT_PLAN.md`, `ARCHITECTURE.md`, `API_CONTRACT.md`, `DECISIONS.md`, `CURRENT_STATUS.md`, and Mermaid ER/sequence diagrams).
+The Store Visit Management System is an offline-first Android application designed for field agents conducting retail store audits. The Day 19 milestone delivers:
+1. **Authentication & Session Safety:** Login, logout, session persistence, account-scoped data isolation, HTTP 401 session expiry handling with zero local data loss, and delayed-401 safety.
+2. **Assigned Store Management & Local Audit Tasks:** Room v2 database with `sequence_number` queue ordering (`MIGRATION_1_2`), task creation/updates/deletions, and camera photo capture stored in account-isolated disk storage.
+3. **Resilient WorkManager Synchronization:** Idempotent task batching and photo multipart streaming (`POST /v1/tasks/sync`, `POST /v1/photos/upload`) backed by a standalone Node.js Express server (`server/server.js`).
+4. **Verified testing** — 15/15 Node integration tests, 46/46 Android JVM tests, and 11/11 connected instrumentation tests from saved XML. The stress run synchronized 100 tasks and 50 linked photos. Offline restart recovery was verified with one task and one linked photo.
+5. **Physical fault status** — Physical HTTP 500, HTTP 504-after-save, mid-upload interruption, and full HTTP 401 recovery remain **UNVERIFIED**.
+6. **Bootcamp demo artifact** — The debug-signed APK was installed on the OnePlus EB2101. The release APK is unsigned and outside the demo submission.
 
 ---
 
@@ -30,34 +32,43 @@ The SQLite-backed mock database is pre-seeded with two synthetic test accounts:
 ### Prerequisites
 - Android Studio Ladybug (or newer) / AGP 9.5.2
 - JDK 17 / Android SDK 37 (Min SDK 24)
-- Android Emulator or Physical Device running Android 7.0+ (API 24+)
+- Node.js 18+ for standalone test backend (`server/`)
+- Android Emulator or Physical Device running Android 7.0+ (API 24+) (e.g. OnePlus EB2101)
 
-### Steps to Run
-1. **Clone & Open Project:**
-   Open `C:\Users\zeeshan\AndroidStudioProjects\StoreVisitManagementSystem` in Android Studio.
-2. **Build Debug APK:**
-   Run Gradle task in terminal or IDE:
-   ```bash
-   ./gradlew app:assembleDebug
+### Steps to Run & Test
+
+1. **Start Standalone Node Backend:**
+   ```powershell
+   $env:STORE_VISIT_TEST_FAULTS="1"
+   Remove-Item Env:STORE_VISIT_TEST_HEADERS -ErrorAction SilentlyContinue
+   $env:STORE_VISIT_BIND_HOST="0.0.0.0"
+   cd server
+   node server.js
    ```
-3. **Run Unit Tests:**
+
+2. **Run Node Integration Tests:**
+   ```powershell
+   cd server
+   npm test
+   ```
+
+3. **Run Android JVM Unit Tests:**
    ```bash
    ./gradlew app:testDebugUnitTest
    ```
-4. **Launch on Device / Emulator:**
-   Select the `app` run configuration and click **Run** (`Shift + F10`).
-5. **In-Process Mock API Operation:**
-   The mock API operates in-process via OkHttp `MockApiInterceptor` backed by `mock_server.db` Android SQLite database. Base URL is configured in `Constants.MOCK_BASE_URL` (`https://api.storevisit.mock/v1/`). HTTP calls are intercepted locally and served directly from `mock_server.db`.
+
+4. **Build APKs:**
+   - Bootcamp demo APK — `./gradlew app:assembleDebug -Pday17BackendHost=192.168.1.102` (`app/build/outputs/apk/debug/app-debug.apk`)
+   - Unsigned release output — `./gradlew app:assembleRelease -Pday17BackendHost=192.168.1.102` (`app/build/outputs/apk/release/app-release-unsigned.apk`)
 
 ---
 
 ## 4. Documentation Index
 
-- [REQUIREMENTS.md](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/REQUIREMENTS.md) — Functional/non-functional specs & measurable acceptance criteria.
-- [DEVELOPMENT_PLAN.md](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/DEVELOPMENT_PLAN.md) — Day 15–19 roadmap aligned with Week 4 PPT (Tuesday = tasks/camera/Room; Wednesday = sync/uploads/recovery; Thursday = debugging/monitoring; Friday = testing/delivery).
-- [ARCHITECTURE.md](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/ARCHITECTURE.md) — Technical architecture, account isolation, in-process SQLite-backed mock backend, photo pipeline, and DI boundaries.
-- [API_CONTRACT.md](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/API_CONTRACT.md) — REST contract endpoints, request/response models, idempotency rules, and error categories.
-- [database.mmd](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/diagrams/database.mmd) — Mermaid ER diagram (`User`, `Store`, `StoreAssignment`, `Task`, `PhotoEvidence`, `SyncQueue`), distinguishing planned Room entities from Day 15 mock DB tables.
-- [offline-sync.mmd](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/diagrams/offline-sync.mmd) — Mermaid sequence flow diagram for offline tasks, atomic transactions, and WorkManager sync recovery.
-- [DECISIONS.md](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/DECISIONS.md) — Log of architectural decisions, current session limitations, and deferred risks.
-- [CURRENT_STATUS.md](file:///C:/Users/zeeshan/AndroidStudioProjects/StoreVisitManagementSystem/docs/CURRENT_STATUS.md) — Detailed status report of completed Day 15 features, current session limitations, and verification results.
+- [Day 19 test report](docs/evidence/day19/day19-test-report.md) — Test results, debug APK checksum and installation, and physical fault status.
+- [REQUIREMENTS.md](file:///C:/Users/KAIF/AndroidStudioProjects/Store-Visit-Management-System/docs/REQUIREMENTS.md) — Functional/non-functional specs & measurable acceptance criteria.
+- [DEVELOPMENT_PLAN.md](file:///C:/Users/KAIF/AndroidStudioProjects/Store-Visit-Management-System/docs/DEVELOPMENT_PLAN.md) — Day 15–19 roadmap aligned with Week 4 PPT.
+- [ARCHITECTURE.md](file:///C:/Users/KAIF/AndroidStudioProjects/Store-Visit-Management-System/docs/ARCHITECTURE.md) — Technical architecture, account isolation, standalone Express backend, photo pipeline, and DI boundaries.
+- [API_CONTRACT.md](file:///C:/Users/KAIF/AndroidStudioProjects/Store-Visit-Management-System/docs/API_CONTRACT.md) — REST contract endpoints, request/response models, idempotency rules, and error categories.
+- [DECISIONS.md](file:///C:/Users/KAIF/AndroidStudioProjects/Store-Visit-Management-System/docs/DECISIONS.md) — Log of architectural decisions, release sync resolution, session safety, and fault recovery.
+- [CURRENT_STATUS.md](file:///C:/Users/KAIF/AndroidStudioProjects/Store-Visit-Management-System/docs/CURRENT_STATUS.md) — Detailed status report of completed Day 19 features, verification results, and physical testing.

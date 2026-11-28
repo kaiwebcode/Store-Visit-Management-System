@@ -40,6 +40,7 @@ interface ApiService {
     @POST("photos/upload")
     suspend fun uploadPhoto(
         @Header("Authorization") token: String,
+        @Header("X-Operation-Id") operationIdHeader: String,
         @Part("operationId") operationId: RequestBody,
         @Part("photoId") photoId: RequestBody,
         @Part("taskId") taskId: RequestBody,

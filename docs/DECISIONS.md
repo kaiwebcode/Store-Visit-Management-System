@@ -30,3 +30,10 @@
 - **Context:** Background sync must run reliably when network connectivity is restored without launching duplicate concurrent sync jobs.
 - **Decision:** Schedule sync with `WorkManager.enqueueUniqueWork("StoreVisitSyncWork_${userId}", KEEP, ...)` with `NetworkType.CONNECTED` constraints and exponential backoff.
 - **Rationale:** Ensures single-instance execution per account, automatically retrying transient errors while avoiding race conditions.
+
+### ADR-06: Release Synchronization Enabling & Permanent 400 Error Isolation
+- **Context:** `BuildConfig.DEBUG` checks in `SyncWorker`, `SyncManager`, and `MockApiInterceptor` previously disabled synchronization in release build variants. Additionally, permanent client errors (HTTP 400) must not cause infinitely looping retries.
+- **Decision:**
+  1. Removed `!BuildConfig.DEBUG` blocks in `SyncWorker` and `SyncManager`, configured `MockApiInterceptor` to check `getBackendHost().isNotBlank()`, and updated `app/build.gradle.kts` release build type with `DAY17_BACKEND_HOST`.
+  2. Permanent client rejections (HTTP 400–499 excluding 408/429) mark the queued operation status as `REJECTED` and the task as `SYNC_FAILED`.
+- **Rationale:** Enables full synchronization capability for release build artifacts while isolating unrecoverable client errors so that valid independent queue items continue to synchronize without infinite retry loops. Local data and photos remain safely preserved on disk.

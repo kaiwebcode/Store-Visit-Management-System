@@ -2,18 +2,14 @@
 
 **Project** Store Visit Management System
 
-**Branch** `feature/day17-reliable-sync`
+**Branch** `feature/day19-testing-release`
 
-**Milestone** Wednesday Day 17, November 25, 2026. Implementation and required acceptance scenarios complete.
+**Milestone** Friday Day 19, November 28, 2026. Bootcamp demo artifact verified.
 
-**Final verification** November 26, 2026.
+- **Automated verification** — 15/15 Node backend integration tests and 46/46 Android JVM tests passed. The saved OnePlus XML records 11/11 connected instrumentation tests.
+- **Stress and restart recovery** — 100 tasks with unique server IDs and 50 linked photos synchronized. Offline restart recovery was verified with one task and one linked photo.
+- **Fault regression coverage** — The backend fixture closes a partially received photo request before multipart parsing and verifies a clean replay. Automated coverage also checks HTTP 500 retry, HTTP 504-after-save idempotency and operation/session matching, and HTTP 401 recovery.
+- **Physical fault status** — Physical HTTP 500, HTTP 504-after-save, mid-upload interruption, and full HTTP 401 recovery remain **UNVERIFIED**.
+- **Demo artifact** — The debug-signed `app-debug.apk` was installed on the OnePlus EB2101. The release APK is unsigned and outside the bootcamp demo submission.
 
-- **Offline and recovery.** Room keeps task and photo operations pending while WorkManager sends them. An active worker is left running when a mutation appends a successor. A new run restores legacy claims for its own account. Transient errors retry with exponential backoff.
-- **Session and ownership.** The Node fixture validates stored, unexpired sessions. WorkManager uses the queued account's active token and clears only the token that received a 401. The server checks store, task, and photo ownership.
-- **Durable sync.** The server applies task operations in sequence and commits writes with account-scoped replay records. Photo bytes, metadata, and replay records commit together. Android keeps local JPEGs and removes an upload operation only after a matching acknowledgement.
-- **Physical-device acceptance.** The OnePlus Nord CE retained the pending task and photo after an offline force-stop and restart. During the verified backend outage, the app stayed in the background as connectivity returned. After the backend restarted, the task uploaded and displayed `SYNCED`. The outage timing, background state, and badge were observed manually. The server snapshots independently verify that `Retry day17` went from absent to exactly one active task and one linked photo. [Before recovery](evidence/day17/server-before-recovery.json) · [After recovery](evidence/day17/server-after-recovery.json)
-- **Automated verification.** The saved results show 31 JVM tests, 8 emulator instrumentation tests, and 7 isolated backend tests passed. Saved API logs show HTTP 504 after save, followed by HTTP 200 for the same operation ID and one logical task and operation. [Retry evidence](evidence/day17/retry-test-20261126141101.txt)
-- **Known limits.** The Node backend is a debug fixture. Sync requires a backend-issued session. A permanent request rejection retains the affected operation and pauses that ordered queue until the cause is corrected and sync runs again.
-- **GitHub submission.** The final audit found no remote Day 17 branch or PR. Publication remains pending.
-
-[Day 17 evidence and known limitations](evidence/day17/summary.md) · [Sync state diagram](diagrams/offline-sync.mmd)
+[Day 19 test report](evidence/day19/day19-test-report.md) · [Sync state diagram](diagrams/offline-sync.mmd)

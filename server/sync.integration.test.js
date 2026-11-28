@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const { fork } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { mkdtemp, readdir, rm } = require('node:fs/promises');
+const http = require('node:http');
+const { setTimeout: delay } = require('node:timers/promises');
 const os = require('node:os');
 const path = require('node:path');
 const sqlite3 = require('sqlite3');
@@ -61,13 +63,17 @@ function operation(id, taskId, sequenceNumber, options = {}) {
 
 const sync = (token, ops, headers) => request('/tasks/sync', token, { batchId: 'integration-test', operations: ops }, headers);
 
-function photo(token, { photoId, taskId, operationId, file = jpeg }, headers) {
+function photoForm({ photoId, taskId, operationId, file = jpeg }) {
     const body = new FormData();
     body.append('photoId', photoId);
     body.append('taskId', taskId);
     body.append('operationId', operationId);
     if (file) body.append('file', new Blob([file], { type: 'image/jpeg' }), 'photo.jpg');
-    return request('/photos/upload', token, body, headers);
+    return body;
+}
+
+function photo(token, upload, headers = {}) {
+    return request('/photos/upload', token, photoForm(upload), { 'X-Operation-Id': upload.operationId, ...headers });
 }
 
 const legacy = operation('legacy_op', 'legacy_task', 1);
@@ -263,6 +269,29 @@ test('post-commit photo timeout targets the multipart operation and replays with
     assert.equal((await select("SELECT 1 FROM processed_operations WHERE operation_id = 'targeted_photo_op'")).length, 1);
 });
 
+test('504-after-save photo fault does not apply if X-Operation-Id header differs from body operationId or session differs', async () => {
+    const targetUpload = { photoId: 'targeted_504_photo', taskId: 'ordered_task', operationId: 'targeted_504_photo_op' };
+    await armFault('504-after-save', agent1, targetUpload.operationId, 'photo');
+
+    // 1. Different session sending targetUpload -> must NOT trigger 504 fault
+    const diffSessionResult = await photo(agent2, { ...targetUpload, photoId: 'agent2_photo', taskId: 'agent2_task' });
+    assert.notEqual(diffSessionResult.status, 504);
+
+    // 2. Mismatched X-Operation-Id header vs body operationId -> must NOT trigger 504 fault
+    const mismatchUpload = { photoId: 'mismatch_504_photo', taskId: 'ordered_task', operationId: 'mismatch_body_op' };
+    const mismatchResult = await photo(agent1, mismatchUpload, { 'X-Operation-Id': targetUpload.operationId });
+    assert.notEqual(mismatchResult.status, 504);
+
+    // 3. Exactly matching session, body operationId, and header -> MUST trigger 504 fault
+    const matchResult = await photo(agent1, targetUpload);
+    assert.equal(matchResult.status, 504);
+
+    // 4. Replay matching operationId -> returns cached response (200)
+    const replayResult = await photo(agent1, targetUpload);
+    assert.equal(replayResult.status, 200);
+    assert.equal(replayResult.data.operationId, targetUpload.operationId);
+});
+
 test('expiry invalidates only the intended session, including two logins for one account', async () => {
     const intendedToken = await login('agent1');
     const otherToken = await login('agent1');
@@ -288,6 +317,51 @@ test('interruption closes only the intended request and the same operation then 
     assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'interrupted_task'")).length, 0);
     assert.deepEqual((await sync(agent1, [pending])).data.succeededOperationIds, [pending.operationId]);
     assert.equal((await select("SELECT 1 FROM tasks WHERE task_id = 'interrupted_task'")).length, 1);
+});
+
+test('pre-multer photo interruption closes a partial upload without writes and allows replay', async () => {
+    const upload = { photoId: 'pre_upload_photo', taskId: 'ordered_task', operationId: 'pre_upload_photo_op' };
+    const url = base + '/photos/upload';
+    const multipart = new Request(url, { method: 'POST', body: photoForm(upload) });
+    const body = Buffer.from(await multipart.arrayBuffer());
+    const partialBytes = body.indexOf(jpeg) + Math.floor(jpeg.length / 2);
+    assert.ok(body.indexOf(jpeg) >= 0 && partialBytes < body.length);
+    await armFault('interrupt', agent1, upload.operationId, 'photo');
+
+    await assert.rejects(new Promise((resolve, reject) => {
+        const req = http.request(url, {
+            method: 'POST',
+            headers: {
+                Authorization: 'Bearer ' + agent1,
+                'X-Operation-Id': upload.operationId,
+                'Content-Type': multipart.headers.get('content-type'),
+                'Content-Length': body.length,
+            },
+        }, response => {
+            response.resume();
+            resolve(response.statusCode);
+        });
+        req.on('error', reject);
+        req.setTimeout(20000, () => req.destroy(new Error('Fixture did not close the partial upload')));
+        // Leave the remaining JPEG bytes and closing multipart boundary unsent.
+        req.write(body.subarray(0, partialBytes));
+    }), { code: 'ECONNRESET' });
+
+    const closeDiagnostic = `[PRE-UPLOAD FAULT] Connection closed before upload completed for operationId=${upload.operationId} (bytesReceived=${partialBytes}, fixtureDeadline=true).`;
+    // The client socket and the server's stdout deliver their events independently.
+    const logDeadline = Date.now() + 2000;
+    while (!serverOutput.includes(closeDiagnostic) && Date.now() < logDeadline) {
+        await delay(20);
+    }
+    assert.ok(serverOutput.includes(closeDiagnostic), 'Pre-multer partial-upload close diagnostic was missing');
+
+    assert.equal((await select('SELECT 1 FROM photo_evidence WHERE photo_id = ?', [upload.photoId])).length, 0);
+    assert.equal((await select('SELECT 1 FROM photo_bytes WHERE photo_id = ?', [upload.photoId])).length, 0);
+    assert.equal((await select('SELECT 1 FROM processed_operations WHERE operation_id = ?', [upload.operationId])).length, 0);
+    const retry = await photo(agent1, upload);
+    assert.equal(retry.status, 201);
+    assert.equal(retry.data.operationId, upload.operationId);
+    assert.equal((await select('SELECT 1 FROM photo_evidence WHERE photo_id = ?', [upload.photoId])).length, 1);
 });
 
 test('fault diagnostics contain a session fingerprint without logging credentials or bearer tokens', () => {

@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
-val day17BackendHost = providers.gradleProperty("day17BackendHost").orElse("192.168.1.111")
+val day17BackendHost = providers.gradleProperty("day17BackendHost").orElse("192.168.1.102")
 require(day17BackendHost.get().matches(Regex("[A-Za-z0-9.-]+"))) { "Invalid Day 17 backend host" }
 
 android {
@@ -45,7 +45,7 @@ android {
         }
         release {
             manifestPlaceholders["appName"] = "Store Visit Management System"
-            buildConfigField("String", "DAY17_BACKEND_HOST", "\"\"")
+            buildConfigField("String", "DAY17_BACKEND_HOST", "\"${day17BackendHost.get()}\"")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
