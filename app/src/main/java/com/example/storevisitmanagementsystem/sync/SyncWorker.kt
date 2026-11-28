@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.example.storevisitmanagementsystem.BuildConfig
 import com.example.storevisitmanagementsystem.data.local.db.AppDatabase
 import com.example.storevisitmanagementsystem.data.local.preferences.TokenManagerImpl
 import com.example.storevisitmanagementsystem.data.remote.api.ApiClient
@@ -22,7 +21,6 @@ class SyncWorker(
     }
 
     override suspend fun doWork(): Result {
-        if (!BuildConfig.DEBUG) return Result.success()
         val userId = inputData.getString(KEY_USER_ID)
             ?: return Result.failure()
 

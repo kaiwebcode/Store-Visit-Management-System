@@ -1,0 +1,14 @@
+Distribution APK SHA-256: A4D88FCE7CBDCD0893D50E9D04F3D21603EE6EB938150DD519B25AC5B3454565
+package: name='com.example.storevisitmanagementsystem.day18' versionCode='1' versionName='1.0' platformBuildVersionName='17' platformBuildVersionCode='37' compileSdkVersion='37' compileSdkVersionCodename='17'
+sdkVersion:'24'
+targetSdkVersion:'37'
+application-debuggable
+List of devices attached
+adb-13f6f5c0-EgDxpR._adb-tls-connect._tcp device product:OnePlusNordCE_IND model:EB2101 device:OnePlusNordCE transport_id:13
+
+Command: adb -s adb-13f6f5c0-EgDxpR._adb-tls-connect._tcp install -r app/build/outputs/apk/debug/app-debug.apk
+Performing Streamed Install
+Success
+Install exit code: 0
+package:/data/app/~~nWU8J2mIs8poriBVfXiPGw==/com.example.storevisitmanagementsystem.day18-GU-zNpzPCf970EtEiIDQWg==/base.apk
+a4d88fce7cbdcd0893d50e9d04f3d21603ee6eb938150dd519b25ac5b3454565  /data/app/~~nWU8J2mIs8poriBVfXiPGw==/com.example.storevisitmanagementsystem.day18-GU-zNpzPCf970EtEiIDQWg==/base.apk

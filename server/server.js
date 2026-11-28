@@ -84,15 +84,86 @@ app.post('/v1/debug/sync-fault', route((req, res) => {
     reply(res, { target, mode, operationId });
 }));
 
+const injectPreUploadSyncFault = target => route(async (req, res, next) => {
+    const fault = nextSyncFault;
+    if (!testFaultsEnabled || fault?.target !== target || fault.sessionId !== faultSessionId(req.token)) {
+        return next();
+    }
+    const incomingOpId = req.get('x-operation-id');
+    if (!incomingOpId || incomingOpId !== fault.operationId) {
+        return next();
+    }
+    if (fault.mode === '504-after-save') {
+        return next();
+    }
+
+    req.syncFault = fault.mode;
+    nextSyncFault = undefined;
+
+    console.info(`[PRE-UPLOAD FAULT] Authenticated ${target} upload request matched (mode=${req.syncFault}, operationId=${fault.operationId}, sessionId=${fault.sessionId.slice(0, 8)}...)`);
+    console.info(`[PRE-UPLOAD FAULT] Request started at ${new Date().toISOString()}`);
+
+    let bytesReceived = 0;
+    const onData = chunk => {
+        bytesReceived += chunk.length;
+        console.info(`[PRE-UPLOAD FAULT] Received stream chunk: ${chunk.length} bytes (total: ${bytesReceived} bytes)`);
+    };
+    req.on('data', onData);
+
+    if (req.syncFault === 'expire') {
+        await withDatabase(db => db.run(
+            "UPDATE sessions SET expires_at = datetime('now', '-1 second') WHERE token = ?",
+            [req.token]
+        ));
+        return session(req, res, next);
+    }
+    if (req.syncFault === '400') {
+        throw new HttpError(400, 'BAD_PHOTO', 'Injected permanent photo rejection before save.');
+    }
+    if (req.syncFault === '500' || req.syncFault === '504') {
+        throw new HttpError(Number(req.syncFault), 'TRANSIENT_FAILURE', 'Injected failure before save.');
+    }
+    if (req.syncFault === 'interrupt') {
+        const holdMs = 15000;
+        let fixtureClosed = false;
+        const timer = setTimeout(() => {
+            fixtureClosed = true;
+            console.info(`[PRE-UPLOAD FAULT] Fixture deadline reached (${holdMs}ms). Destroying socket for operationId=${fault.operationId}`);
+            req.socket.destroy();
+        }, holdMs);
+
+        const onClosed = () => {
+            clearTimeout(timer);
+            req.removeListener('data', onData);
+            const bodyStatus = req.complete ? 'after receiving the full request body' : 'before upload completed';
+            console.info(`[PRE-UPLOAD FAULT] Connection closed ${bodyStatus} for operationId=${fault.operationId} (bytesReceived=${bytesReceived}, fixtureDeadline=${fixtureClosed}).`);
+        };
+        res.once('close', onClosed);
+        req.socket.once('error', err => {
+            console.info(`[PRE-UPLOAD FAULT] Socket error (${err.message}) after receiving ${bytesReceived} bytes for operationId=${fault.operationId}`);
+        });
+        return;
+    }
+    next();
+});
+
 const injectSyncFault = target => route(async (req, res, next) => {
     const fault = nextSyncFault;
     if (!testFaultsEnabled || fault?.target !== target || fault.sessionId !== faultSessionId(req.token)) {
         return next();
     }
-    const operationMatches = target === 'task'
-        ? Array.isArray(req.body?.operations) && req.body.operations.some(op => op?.operationId === fault.operationId)
-        : req.body?.operationId === fault.operationId;
-    if (!operationMatches) return next();
+
+    if (target === 'task') {
+        const matches = Array.isArray(req.body?.operations) && req.body.operations.some(op => op?.operationId === fault.operationId);
+        if (!matches) return next();
+    } else if (target === 'photo') {
+        const bodyOpId = req.body?.operationId;
+        if (!bodyOpId || bodyOpId !== fault.operationId) return next();
+        const headerOpId = req.get('x-operation-id');
+        if (headerOpId && headerOpId !== bodyOpId) return next();
+    } else {
+        return next();
+    }
 
     req.syncFault = fault.mode;
     nextSyncFault = undefined;
@@ -112,8 +183,6 @@ const injectSyncFault = target => route(async (req, res, next) => {
         throw new HttpError(Number(req.syncFault), 'TRANSIENT_FAILURE', 'Injected failure before save.');
     }
     if (req.syncFault === 'interrupt') {
-        // Hold an already-received request long enough to switch off the phone's network.
-        // If the connection stays open, close it without a response or write.
         const holdMs = 8000;
         let fixtureClosed = false;
         const timer = setTimeout(() => {
@@ -313,7 +382,7 @@ function isJpeg(bytes) {
 const photoUrl = (req, photoId) => req.protocol + '://' + req.get('host') + '/v1/uploads/' + photoId + '.jpg';
 const legacyFile = photoId => path.join(uploadsDir, photoId + '.jpg');
 
-app.post('/v1/photos/upload', route(session), route((req, res, next) => {
+app.post('/v1/photos/upload', route(session), injectPreUploadSyncFault('photo'), route((req, res, next) => {
     simulateFailure(req);
     next();
 }), upload.single('file'), injectSyncFault('photo'), route(async (req, res) => {

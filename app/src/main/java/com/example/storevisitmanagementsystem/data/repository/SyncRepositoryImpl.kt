@@ -282,7 +282,7 @@ class SyncRepositoryImpl(
                 setOf(InFlightSync.Record(userId, photoEntity.taskId)),
                 InFlightSync.Record(userId, photoEntity.photoId)
             ) {
-                apiService.uploadPhoto(bearer(token), opIdBody, photoIdBody, taskIdBody, filePart)
+                apiService.uploadPhoto(bearer(token), op.operationId, opIdBody, photoIdBody, taskIdBody, filePart)
             }
 
             if (response.code() == 401) {

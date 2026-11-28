@@ -2,7 +2,6 @@ package com.example.storevisitmanagementsystem.sync
 
 import android.content.Context
 import androidx.work.*
-import com.example.storevisitmanagementsystem.BuildConfig
 import java.util.concurrent.TimeUnit
 
 object SyncManager {
@@ -14,7 +13,7 @@ object SyncManager {
         enqueue(context, userId, ExistingWorkPolicy.APPEND_OR_REPLACE)
 
     private fun enqueue(context: Context, userId: String, policy: ExistingWorkPolicy) {
-        if (!BuildConfig.DEBUG || userId.isBlank()) return
+        if (userId.isBlank()) return
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)

@@ -457,7 +457,7 @@ class SyncRepositoryTest {
             )
         }
 
-        override suspend fun uploadPhoto(token: String, operationId: RequestBody, photoId: RequestBody, taskId: RequestBody, file: MultipartBody.Part): Response<ApiResponse<PhotoUploadResponse>> {
+        override suspend fun uploadPhoto(token: String, operationIdHeader: String, operationId: RequestBody, photoId: RequestBody, taskId: RequestBody, file: MultipartBody.Part): Response<ApiResponse<PhotoUploadResponse>> {
             val sentOperationId = operationId.asText()
             sentPhotoIds.add(sentOperationId)
             photoEntityRequests.add(taskId.asText() to photoId.asText())

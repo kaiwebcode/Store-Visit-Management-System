@@ -361,7 +361,7 @@ class RoomDaoTest {
                 for (index in 0 until setup.length()) v1.execSQL(setup.getString(index))
                 v1.execSQL("INSERT INTO tasks VALUES ('tsk_001', 'str_101', 'usr_001', 'Offline task', '', 'GENERAL', 'MEDIUM', 'PENDING', NULL, '2026-11-25T10:00:00Z', '2026-11-25T10:00:00Z', 'PENDING_INSERT', NULL, 0)")
                 v1.execSQL(
-                    "INSERT INTO photo_evidence VALUES ('pho_001', 'tsk_001', 'usr_001', ?, NULL, ?, 'PENDING_UPLOAD', '2026-11-25T10:00:00Z')",
+                    "INSERT INTO photo_evidence (photo_id, task_id, user_id, local_file_path, remote_url, file_size_bytes, mime_type, upload_status, created_at) VALUES ('pho_001', 'tsk_001', 'usr_001', ?, NULL, ?, 'image/jpeg', 'PENDING_UPLOAD', '2026-11-25T10:00:00Z')",
                     arrayOf<Any>(existingPhoto.absolutePath, existingPhoto.length())
                 )
                 v1.execSQL("INSERT INTO sync_queue VALUES ('op_009', 'TASK', 'tsk_001', 'CREATE', 'usr_001', '{}', 0, 'PENDING', NULL, '2026-11-25T10:00:00Z')")

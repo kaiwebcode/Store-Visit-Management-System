@@ -487,6 +487,7 @@ class Day18DebuggingAndMonitoringTest {
 
         override suspend fun uploadPhoto(
             token: String,
+            operationIdHeader: String,
             operationId: RequestBody,
             photoId: RequestBody,
             taskId: RequestBody,

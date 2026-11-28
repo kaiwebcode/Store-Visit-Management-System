@@ -45,7 +45,7 @@ class MockApiInterceptor(appContext: Context) : Interceptor {
                 .request(request)
                 .protocol(Protocol.HTTP_1_1)
 
-            if (BuildConfig.DEBUG && request.url.host == "api.storevisit.mock") {
+            if (request.url.host == "api.storevisit.mock" && getBackendHost().isNotBlank()) {
                 val backendUrl = request.url.newBuilder().scheme("http").host(getBackendHost()).port(3000).build()
                 val backendRequest = request.newBuilder().url(backendUrl).build()
                 when {

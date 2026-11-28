@@ -130,7 +130,7 @@ class AuthRepositoryTest {
             return Response.success(ApiResponse(success = true, data = null))
         }
 
-        override suspend fun uploadPhoto(token: String, operationId: okhttp3.RequestBody, photoId: okhttp3.RequestBody, taskId: okhttp3.RequestBody, file: okhttp3.MultipartBody.Part): Response<ApiResponse<com.example.storevisitmanagementsystem.data.remote.model.PhotoUploadResponse>> {
+        override suspend fun uploadPhoto(token: String, operationIdHeader: String, operationId: okhttp3.RequestBody, photoId: okhttp3.RequestBody, taskId: okhttp3.RequestBody, file: okhttp3.MultipartBody.Part): Response<ApiResponse<com.example.storevisitmanagementsystem.data.remote.model.PhotoUploadResponse>> {
             return Response.success(ApiResponse(success = true, data = null))
         }
     }
